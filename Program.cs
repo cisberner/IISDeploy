@@ -177,7 +177,6 @@ class Program
     {
         var lower = fileName.ToLowerInvariant();
         return lower == "appsettings.json"
-            || lower == "web.config"
-            || lower.StartsWith("aspnetcore");
+            || lower == "web.config";
     }
 }
