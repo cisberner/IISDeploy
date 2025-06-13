@@ -24,6 +24,7 @@ class Program
         Console.WriteLine("\n🌐 Listing installed IIS sites:");
         using (var serverManager = new ServerManager())
         {
+
             var sites = serverManager.Sites.ToList();
 
             for (int i = 0; i < sites.Count; i++)
@@ -31,8 +32,15 @@ class Program
                 Console.WriteLine($"{i + 1}: {sites[i].Name}");
             }
 
+            Console.WriteLine($"{sites.Count + 1}: {"Cancel"}");
+
             Console.Write("\nEnter the number of the site to deploy to: ");
             var input = Console.ReadLine();
+
+            if (int.TryParse(input, out int testIndex) && testIndex == sites.Count + 1)
+            {
+                return;
+            }
 
             if (!int.TryParse(input, out int selectedIndex) || selectedIndex < 1 || selectedIndex > sites.Count)
             {

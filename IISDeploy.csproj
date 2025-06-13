@@ -10,6 +10,7 @@
     <Company>Christian Isberner Software Consultant</Company>
     <Description>A command line tool which publishes a zipped Publish folder on an installed IIS site.</Description>
     <Copyright>Christian Isberner</Copyright>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
   </PropertyGroup>
 
   <ItemGroup>
