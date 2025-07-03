@@ -1,0 +1,65 @@
+<Window x:Class="IISDeploy.UI.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:local="clr-namespace:IISDeploy.UI"
+        mc:Ignorable="d"
+        Title="IIS Deployment Tool" Height="700" Width="800">
+    <Grid Margin="10">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,10">
+            <Button x:Name="SelectZipButton" Content="Select Deployment ZIP" Width="180" Height="30" Click="SelectZipButton_Click" Margin="0,0,10,0"/>
+            <TextBlock x:Name="SelectedZipFileText" Text="No ZIP file selected." VerticalAlignment="Center" MaxWidth="550" TextTrimming="CharacterEllipsis"/>
+        </StackPanel>
+
+        <TabControl Grid.Row="1">
+            <TabItem Header="Install New Site">
+                <StackPanel Margin="10">
+                    <TextBlock Text="Site Name:" FontWeight="Bold"/>
+                    <TextBox x:Name="NewSiteNameText" Margin="0,0,0,10"/>
+
+                    <TextBlock Text="Port Number (e.g., 443):" FontWeight="Bold"/>
+                    <TextBox x:Name="NewSitePortText" Text="443" Margin="0,0,0,10"/>
+
+                    <TextBlock Text="PFX Password (for new self-signed certificate):" FontWeight="Bold"/>
+                    <PasswordBox x:Name="NewSitePfxPassword" Margin="0,0,0,10"/>
+
+                    <TextBlock Text="Optional: Base Path for Sites (default C:\inetpub)" FontWeight="Bold"/>
+                    <TextBox x:Name="NewSiteBasePathText" Text="C:\inetpub" Margin="0,0,0,10"/>
+
+                    <TextBlock Text="Optional: Path for Certificates (default C:\Certs)" FontWeight="Bold"/>
+                    <TextBox x:Name="NewSiteCertsPathText" Text="C:\Certs" Margin="0,0,0,10"/>
+
+                    <Button x:Name="CreateNewSiteButton" Content="Create New Site" Height="30" Click="CreateNewSiteButton_Click" Margin="0,10,0,0"/>
+                </StackPanel>
+            </TabItem>
+            <TabItem Header="Deploy to Existing Site">
+                <StackPanel Margin="10">
+                    <TextBlock Text="Select IIS Site:" FontWeight="Bold"/>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <ComboBox x:Name="ExistingSitesCombo" Grid.Column="0" Margin="0,0,10,10"/>
+                        <Button x:Name="RefreshSitesButton" Grid.Column="1" Content="Refresh List" Height="30" Click="RefreshSitesButton_Click" Margin="0,0,0,10"/>
+                    </Grid>
+                    <Button x:Name="DeployToExistingSiteButton" Content="Deploy to Selected Site" Height="30" Click="DeployToExistingSiteButton_Click" Margin="0,10,0,0"/>
+                </StackPanel>
+            </TabItem>
+        </TabControl>
+
+        <GroupBox Header="Logs &amp; Status" Grid.Row="2" Margin="0,10,0,0">
+            <ScrollViewer VerticalScrollBarVisibility="Auto" MaxHeight="200">
+                <TextBlock x:Name="LogOutputText" TextWrapping="Wrap" FontFamily="Consolas"/>
+            </ScrollViewer>
+        </GroupBox>
+
+    </Grid>
+</Window>
