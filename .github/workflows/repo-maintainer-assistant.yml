@@ -49,10 +49,10 @@ jobs:
             if (!isIssue) {
               const totalChanges = (item.additions || 0) + (item.deletions || 0);
               const sizeLabel = totalChanges < prSmallThreshold
-                ? { name: "size: small", color: "0e8a16", description: "PR with less than 50 lines changed" }
+                ? { name: "size: small", color: "0e8a16", description: `PR with fewer than ${prSmallThreshold} lines changed` }
                 : totalChanges < prMediumThreshold
-                  ? { name: "size: medium", color: "fbca04", description: "PR with 50-299 lines changed" }
-                  : { name: "size: large", color: "d93f0b", description: "PR with 300+ lines changed" };
+                  ? { name: "size: medium", color: "fbca04", description: `PR with ${prSmallThreshold}-${prMediumThreshold - 1} lines changed` }
+                  : { name: "size: large", color: "d93f0b", description: `PR with ${prMediumThreshold}+ lines changed` };
               desired.push(sizeLabel);
             }
 
@@ -110,7 +110,7 @@ jobs:
               });
             }
 
-  stale_cleanup:
+  stale-cleanup:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     permissions:
@@ -121,8 +121,8 @@ jobs:
         uses: actions/stale@v9
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
-          days-before-stale: ${{ vars.MAINTAINER_DAYS_BEFORE_STALE || 30 }}
-          days-before-close: ${{ vars.MAINTAINER_DAYS_BEFORE_CLOSE || 7 }}
+          days-before-stale: ${{ vars.MAINTAINER_DAYS_BEFORE_STALE != '' && vars.MAINTAINER_DAYS_BEFORE_STALE || '30' }}
+          days-before-close: ${{ vars.MAINTAINER_DAYS_BEFORE_CLOSE != '' && vars.MAINTAINER_DAYS_BEFORE_CLOSE || '7' }}
           stale-issue-message: "This issue has been marked as stale due to inactivity. Please comment or push updates to keep it open."
           stale-pr-message: "This pull request has been marked as stale due to inactivity. Please comment or push updates to keep it open."
           close-issue-message: "Closing this issue due to prolonged inactivity."
@@ -132,7 +132,7 @@ jobs:
           exempt-issue-labels: "pinned,security,priority: high"
           exempt-pr-labels: "pinned,security,priority: high"
 
-  weekly_digest:
+  weekly-digest:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     permissions:
