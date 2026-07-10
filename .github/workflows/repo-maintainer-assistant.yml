@@ -205,3 +205,4 @@ jobs:
                 labels: [digestLabel.name],
               });
             }
+            core.info("Maintainer digest refreshed.");
