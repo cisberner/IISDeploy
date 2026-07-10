@@ -159,10 +159,36 @@ class Program
             var newSite = serverManager.Sites.Add(siteName, "https", $"*:{port}:", siteFolder);
             newSite.ApplicationDefaults.ApplicationPoolName = siteName;
 
+            Console.WriteLine($"🔏 Binding certificate to HTTPS...");
+            CertificateGenerator.BindCertificateToIIS(newSite, siteName, port: port, certThumbprint: cert.Thumbprint);
+
             serverManager.CommitChanges();
             Console.WriteLine($"✅ Created new site '{siteName}' with HTTPS on port {port}.");
-            Thread.Sleep(3000);
         }
+
+        // Extract ZIP contents to the new site folder
+        ExtractZipToFolder(zipFile, siteFolder);
+
+        // Start app pool and site
+        using (var serverManager = new ServerManager())
+        {
+            var appPool = serverManager.ApplicationPools[siteName];
+            if (appPool != null && appPool.State != ObjectState.Started)
+            {
+                appPool.Start();
+                Console.WriteLine($"🚀 App pool '{siteName}' started.");
+            }
+
+            var createdSite = serverManager.Sites[siteName];
+            if (createdSite != null)
+            {
+                createdSite.Start();
+                serverManager.CommitChanges();
+                Console.WriteLine($"🚀 Site '{siteName}' started.");
+            }
+        }
+
+        Console.WriteLine("🎉 Done.");
     }
 
     static void DeployToSite(Site selectedSite, string zipFile)
@@ -246,45 +272,7 @@ class Program
             }
 
             // 5. Extract ZIP to site folder, skip protected files
-            Console.WriteLine("📦 Extracting new deployment...");
-            using (ZipArchive archive = ZipFile.OpenRead(zipFile))
-            {
-                foreach (var entry in archive.Entries)
-                {
-                    if (!entry.FullName.StartsWith("Publish/", StringComparison.OrdinalIgnoreCase))
-                        continue; // Skip anything outside the Publish folder
-
-                    var relativePath = entry.FullName.Substring("Publish/".Length);
-
-                    if (string.IsNullOrWhiteSpace(relativePath))
-                        continue; // Skip the Publish folder itself
-
-                    var targetPath = Path.Combine(physicalPath, relativePath);
-
-                    if (string.IsNullOrWhiteSpace(entry.Name)) // It's a directory
-                    {
-                        Directory.CreateDirectory(targetPath);
-                        continue;
-                    }
-
-                    string fileName = Path.GetFileName(relativePath);
-                    if (IsProtectedFile(fileName))
-                    {
-                        Console.WriteLine($"⚠️ Skipping protected file: {relativePath}");
-                        continue;
-                    }
-
-                    try
-                    {
-                        Directory.CreateDirectory(Path.GetDirectoryName(targetPath)!);
-                        entry.ExtractToFile(targetPath, overwrite: true);
-                    }
-                    catch (Exception ex)
-                    {
-                        Console.WriteLine($"⚠️ Failed to extract {relativePath}: {ex.Message}");
-                    }
-                }
-            }
+            ExtractZipToFolder(zipFile, physicalPath);
 
             Console.WriteLine("✅ Deployment complete.");
 
@@ -306,6 +294,52 @@ class Program
 
         Console.WriteLine("🎉 Done.");
 
+    }
+
+    static void ExtractZipToFolder(string zipFile, string targetFolder)
+    {
+        Console.WriteLine("📦 Extracting deployment files...");
+        using (ZipArchive archive = ZipFile.OpenRead(zipFile))
+        {
+            foreach (var entry in archive.Entries)
+            {
+                if (!entry.FullName.StartsWith("Publish/", StringComparison.OrdinalIgnoreCase))
+                    continue; // Skip anything outside the Publish folder
+
+                var relativePath = entry.FullName.Substring("Publish/".Length);
+
+                if (string.IsNullOrWhiteSpace(relativePath))
+                    continue; // Skip the Publish folder itself
+
+                var targetPath = Path.Combine(targetFolder, relativePath);
+
+                if (string.IsNullOrWhiteSpace(entry.Name)) // It's a directory
+                {
+                    Directory.CreateDirectory(targetPath);
+                    continue;
+                }
+
+                string fileName = Path.GetFileName(relativePath);
+                if (IsProtectedFile(fileName))
+                {
+                    Console.WriteLine($"⚠️ Skipping protected file: {relativePath}");
+                    continue;
+                }
+
+                try
+                {
+                    var dir = Path.GetDirectoryName(targetPath);
+                    if (dir != null)
+                        Directory.CreateDirectory(dir);
+                    entry.ExtractToFile(targetPath, overwrite: true);
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"⚠️ Failed to extract {relativePath}: {ex.Message}");
+                }
+            }
+        }
+        Console.WriteLine("✅ Deployment files extracted.");
     }
 
     static byte[] StringToByteArray(string hex)
@@ -388,18 +422,12 @@ class Program
             // Create the new HTTPS binding
             var binding = site.Bindings.CreateElement("binding");
 
-            Console.WriteLine($"Bind certificate (4).");
-
             binding["protocol"] = "https";
             binding["bindingInformation"] = $"{ip}:{port}:"; // hostname can go after the last colon if needed
 
             // Certificate settings
             binding["certificateStoreName"] = "My";
-
-            Console.WriteLine($"Bind certificate (4.1).");
             binding["certificateHash"] = StringToByteArray(certThumbprint);
-
-            Console.WriteLine($"Bind certificate (5).");
 
             site.Bindings.Add(binding);
 
