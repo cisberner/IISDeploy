@@ -1,0 +1,32 @@
+name: Bug Fix Agent
+
+on:
+  issues:
+    types: [labeled]
+
+permissions:
+  issues: write
+
+jobs:
+  assign-to-copilot:
+    if: github.event.label.name == 'bug'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Assign bug issue to GitHub Copilot coding agent
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issueNumber = context.payload.issue.number;
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+
+            // Assign the issue to the GitHub Copilot coding agent.
+            // Copilot will create a branch, implement a fix, and open a pull request.
+            await github.rest.issues.addAssignees({
+              owner,
+              repo,
+              issue_number: issueNumber,
+              assignees: ['copilot'],
+            });
+
+            core.info(`Issue #${issueNumber} assigned to @copilot for automated bug fix.`);
