@@ -1,0 +1,207 @@
+name: Repo Maintainer Assistant
+
+on:
+  issues:
+    types: [opened, edited, reopened]
+  pull_request:
+    types: [opened, edited, reopened, ready_for_review]
+  schedule:
+    - cron: "0 8 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  triage:
+    if: github.event_name == 'issues' || github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      pull-requests: write
+    steps:
+      - name: Label and triage new item
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const isIssue = context.eventName === "issues";
+            const item = isIssue ? context.payload.issue : context.payload.pull_request;
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+
+            const text = `${item.title}\n${item.body || ""}`.toLowerCase();
+            const desired = [];
+
+            const includeIfMatches = (label, color, description, patterns) => {
+              if (patterns.some((pattern) => pattern.test(text))) {
+                desired.push({ name: label, color, description });
+              }
+            };
+
+            includeIfMatches("bug", "d73a4a", "Bug report or defect", [/\bbug\b/, /\berror\b/, /\bfail(ing|ure)?\b/, /\bexception\b/]);
+            includeIfMatches("enhancement", "a2eeef", "Feature request or improvement", [/\bfeature\b/, /\benhancement\b/, /\bimprov(e|ement)\b/, /\brequest\b/]);
+            includeIfMatches("documentation", "0075ca", "Documentation updates", [/\bdocs?\b/, /\breadme\b/, /\bdocumentation\b/]);
+            includeIfMatches("maintenance", "8a2be2", "General repository maintenance", [/\bchore\b/, /\brefactor\b/, /\bdependency\b/, /\bupgrade\b/, /\bci\b/]);
+
+            if (!isIssue) {
+              const totalChanges = (item.additions || 0) + (item.deletions || 0);
+              const sizeLabel = totalChanges < 50
+                ? { name: "size: small", color: "0e8a16", description: "PR with less than 50 lines changed" }
+                : totalChanges < 300
+                  ? { name: "size: medium", color: "fbca04", description: "PR with 50-299 lines changed" }
+                  : { name: "size: large", color: "d93f0b", description: "PR with 300+ lines changed" };
+              desired.push(sizeLabel);
+            }
+
+            const ensureLabel = async ({ name, color, description }) => {
+              try {
+                await github.rest.issues.getLabel({ owner, repo, name });
+              } catch (error) {
+                if (error.status !== 404) throw error;
+                await github.rest.issues.createLabel({ owner, repo, name, color, description });
+              }
+            };
+
+            for (const label of desired) {
+              await ensureLabel(label);
+            }
+
+            if (desired.length > 0) {
+              await github.rest.issues.addLabels({
+                owner,
+                repo,
+                issue_number: item.number,
+                labels: desired.map((entry) => entry.name),
+              });
+            }
+
+            if (isIssue) {
+              const bodyLength = (item.body || "").trim().length;
+              if (bodyLength < 30) {
+                const comments = await github.paginate(github.rest.issues.listComments, {
+                  owner,
+                  repo,
+                  issue_number: item.number,
+                  per_page: 100,
+                });
+                const alreadyPrompted = comments.some((comment) =>
+                  comment.user?.type === "Bot" &&
+                  comment.body?.includes("<!-- maintainer-assistant:details-request -->")
+                );
+
+                if (!alreadyPrompted) {
+                  await github.rest.issues.createComment({
+                    owner,
+                    repo,
+                    issue_number: item.number,
+                    body: "<!-- maintainer-assistant:details-request -->\nThanks for opening this issue. Please add reproduction steps, expected behavior, and actual behavior so maintainers can triage it quickly.",
+                  });
+                }
+              }
+            } else if (context.payload.action === "opened") {
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number: item.number,
+                body: "Thanks for the PR! Maintainer assistant checklist:\n- [ ] Confirm deployment impact\n- [ ] Add or update tests if behavior changed\n- [ ] Note rollback considerations",
+              });
+            }
+
+  stale_cleanup:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      pull-requests: write
+    steps:
+      - name: Mark stale issues and PRs
+        uses: actions/stale@v9
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          days-before-stale: 30
+          days-before-close: 7
+          stale-issue-message: "This issue has been marked as stale due to inactivity. Please comment or push updates to keep it open."
+          stale-pr-message: "This pull request has been marked as stale due to inactivity. Please comment or push updates to keep it open."
+          close-issue-message: "Closing this issue due to prolonged inactivity."
+          close-pr-message: "Closing this pull request due to prolonged inactivity."
+          stale-issue-label: "stale"
+          stale-pr-label: "stale"
+          exempt-issue-labels: "pinned,security,priority: high"
+          exempt-pr-labels: "pinned,security,priority: high"
+
+  weekly_digest:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      pull-requests: read
+    steps:
+      - name: Generate maintainer digest
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const digestTitle = "Maintainer Assistant Weekly Digest";
+            const digestLabel = { name: "maintainer-digest", color: "5319e7", description: "Automated weekly maintainer digest" };
+
+            try {
+              await github.rest.issues.getLabel({ owner, repo, name: digestLabel.name });
+            } catch (error) {
+              if (error.status !== 404) throw error;
+              await github.rest.issues.createLabel({ owner, repo, ...digestLabel });
+            }
+
+            const [openIssues, openPulls] = await Promise.all([
+              github.paginate(github.rest.issues.listForRepo, { owner, repo, state: "open", per_page: 100 }).then((items) => items.filter((item) => !item.pull_request)),
+              github.paginate(github.rest.pulls.list, { owner, repo, state: "open", per_page: 100 }),
+            ]);
+
+            const sortByAge = (a, b) => new Date(a.created_at) - new Date(b.created_at);
+            const oldestIssues = [...openIssues].sort(sortByAge).slice(0, 5);
+            const oldestPulls = [...openPulls].sort(sortByAge).slice(0, 5);
+
+            const toLine = (item) => `- #${item.number} ${item.title} (opened ${item.created_at.slice(0, 10)})`;
+
+            const body = [
+              "## Weekly Maintainer Snapshot",
+              "",
+              `- Open issues: **${openIssues.length}**`,
+              `- Open pull requests: **${openPulls.length}**`,
+              "",
+              "### Oldest open issues",
+              ...(oldestIssues.length ? oldestIssues.map(toLine) : ["- None 🎉"]),
+              "",
+              "### Oldest open pull requests",
+              ...(oldestPulls.length ? oldestPulls.map(toLine) : ["- None 🎉"]),
+              "",
+              "_Generated automatically by Repo Maintainer Assistant workflow._",
+            ].join("\n");
+
+            const existing = await github.paginate(github.rest.issues.listForRepo, {
+              owner,
+              repo,
+              state: "open",
+              labels: digestLabel.name,
+              per_page: 100,
+            });
+
+            const current = existing.find((issue) => issue.title === digestTitle && !issue.pull_request);
+
+            if (current) {
+              await github.rest.issues.update({
+                owner,
+                repo,
+                issue_number: current.number,
+                title: digestTitle,
+                body,
+              });
+            } else {
+              await github.rest.issues.create({
+                owner,
+                repo,
+                title: digestTitle,
+                body,
+                labels: [digestLabel.name],
+              });
+            }
