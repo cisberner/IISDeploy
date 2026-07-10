@@ -436,7 +436,7 @@ namespace IISDeploy.Core
                     if (cert == null || !result.LogMessages.Contains("PFX file created.")) // Check if cert creation was successful by checking logs or a direct status if available
                     {
                         // CreateSelfSignedCertificate already logs errors to 'result'
-                        result.Message = result.Message актуальнее // "Failed to create self-signed certificate. Check logs for details.";
+                        result.Message = result.Message;  // "Failed to create self-signed certificate. Check logs for details.";
                         return result; // Stop if certificate creation failed
                     }
                     result.AddLog($"Self-signed certificate PFX created at: {certPath}");
@@ -444,7 +444,7 @@ namespace IISDeploy.Core
                     if (!Core.CertificateGenerator.InstallCertificate(cert, result))
                     {
                         // InstallCertificate logs errors to 'result'
-                         result.Message = result.Message актуальнее // "Failed to install the new certificate. Check logs for details.";
+                        result.Message = result.Message; // "Failed to install the new certificate. Check logs for details.";
                         return result; // Stop if certificate installation failed
                     }
                     result.AddLog($"New certificate created and installed: {cert.Subject} (Thumbprint: {cert.Thumbprint})");
