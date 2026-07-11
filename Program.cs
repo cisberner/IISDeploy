@@ -1,4 +1,5 @@
-﻿using Microsoft.Web.Administration;
+using Microsoft.Web.Administration;
+using System.Diagnostics;
 using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
@@ -9,21 +10,21 @@ class Program
 {
     static void Main(string[] args)
     {
-        Console.WriteLine("🔍 Searching for ZIP deployment file...");
+        Console.WriteLine("Searching for ZIP deployment file...");
 
         var currentDirectory = Directory.GetCurrentDirectory();
         var zipFiles = Directory.GetFiles(currentDirectory, "*.zip");
 
         if (zipFiles.Length != 1)
         {
-            Console.WriteLine($"❌ Expected exactly one ZIP file, but found {zipFiles.Length}.");
+            Console.WriteLine($"ERROR: Expected exactly one ZIP file, but found {zipFiles.Length}.");
             return;
         }
 
         var zipFile = zipFiles[0];
-        Console.WriteLine($"✅ Found ZIP: {Path.GetFileName(zipFile)}");
+        Console.WriteLine($"Found ZIP: {Path.GetFileName(zipFile)}");
 
-        Console.WriteLine("\n🌐 Listing installed IIS sites:");
+        Console.WriteLine("\nListing installed IIS sites:");
         Console.WriteLine($"");
         using (var serverManager = new ServerManager())
         {
@@ -43,24 +44,25 @@ class Program
             Console.Write("\nEnter the number of the site to deploy to (or create new): ");
             var input = Console.ReadLine();
 
-            if (int.TryParse(input, out int selectedIndex))
+            if (!int.TryParse(input, out int selectedIndex))
             {
-                if (selectedIndex == sites.Count + 2)
-                    return;
+                Console.WriteLine("ERROR: Invalid selection. Please enter a number.");
+                return;
+            }
 
-                if (selectedIndex == sites.Count + 1)
-                {
-                    CreateNewSite(zipFile);
-                    return;
-                }
+            if (selectedIndex == sites.Count + 2)
+                return;
 
-                if (selectedIndex < 1 || selectedIndex > sites.Count)
-                {
-                    Console.WriteLine("❌ Invalid selection.");
-                    return;
-                }
+            if (selectedIndex == sites.Count + 1)
+            {
+                CreateNewSite(zipFile);
+                return;
+            }
 
-                // Continue with your existing deployment logic...
+            if (selectedIndex < 1 || selectedIndex > sites.Count)
+            {
+                Console.WriteLine("ERROR: Invalid selection.");
+                return;
             }
 
             var selectedSite = sites[selectedIndex - 1];
@@ -71,12 +73,12 @@ class Program
 
     static void CreateNewSite(string zipFile)
     {
-        Console.Write("📝 Enter the name for the new IIS site: ");
+        Console.Write("Enter the name for the new IIS site: ");
         var siteName = Console.ReadLine()?.Trim();
 
         if (string.IsNullOrWhiteSpace(siteName))
         {
-            Console.WriteLine("❌ Site name cannot be empty.");
+            Console.WriteLine("ERROR: Site name cannot be empty.");
             return;
         }
 
@@ -85,7 +87,7 @@ class Program
 
         if (Directory.Exists(siteFolder))
         {
-            Console.WriteLine("⚠️ Folder already exists. Choose another site name or clean up previous installation first.");
+            Console.WriteLine("WARNING: Folder already exists. Choose another site name or clean up previous installation first.");
             return;
         }
 
@@ -103,12 +105,17 @@ class Program
             File.Copy(webConfigFile, Path.Combine(siteFolder, "web.config"), overwrite: false);
         }
 
-        Console.Write("🔢 Enter port number to bind the site to (default 443): ");
+        Console.Write("Enter port number to bind the site to (default 443): ");
         var portInput = Console.ReadLine();
         int port = int.TryParse(portInput, out int parsedPort) ? parsedPort : 443;
 
         string certSubject = $"CN={siteName}.local";
-        X509Certificate2? cert = null;
+
+        // We only need the thumbprint to bind. Never keep an open X509Certificate2
+        // (and its private-key handle) alive during the IIS binding commit below:
+        // HTTP.sys opens the key from the store itself, and a competing open handle
+        // makes AddSslCertificate fail with 0x80070520 ("logon session does not exist").
+        string? certThumbprint = null;
 
         // Check if certificate already exists in LocalMachine\My
         using (var store = new X509Store(StoreName.My, StoreLocation.LocalMachine))
@@ -118,88 +125,83 @@ class Program
                 .Find(X509FindType.FindBySubjectDistinguishedName, certSubject, false);
             if (existingCerts.Count > 0)
             {
-                cert = existingCerts[0];
-                Console.WriteLine($"🔑 Using existing certificate: {cert.Subject} (Thumbprint: {cert.Thumbprint})");
+                using var existing = existingCerts[0];
+                certThumbprint = existing.Thumbprint;
+                Console.WriteLine($"Using existing certificate: {existing.Subject} (Thumbprint: {certThumbprint})");
             }
             store.Close();
         }
 
         // If not found, create and install a new certificate
-        if (cert == null)
+        if (certThumbprint == null)
         {
-            Console.WriteLine("🔐 Creating self-signed certificate...");
+            Console.WriteLine("Creating self-signed certificate...");
             string certDirectory = @"C:\Certs";
             if (!Directory.Exists(certDirectory))
             {
                 Directory.CreateDirectory(certDirectory);
             }
             string certPath = Path.Combine(certDirectory, siteName + ".pfx");
-            cert = CertificateGenerator.CreateSelfSignedCertificate(
+
+            // Dispose the cert (and its private-key handle) as soon as it is
+            // persisted to the machine store; only the thumbprint is kept.
+            using var cert = CertificateGenerator.CreateSelfSignedCertificate(
                 certName: $"{siteName}.local",
                 outputPfxPath: certPath,
                 password: "IFMAdmin123");
             CertificateGenerator.InstallCertificate(cert);
-            Console.WriteLine($"✅ Created and installed new certificate: {cert.Subject} (Thumbprint: {cert.Thumbprint})");
+            certThumbprint = cert.Thumbprint;
+            Console.WriteLine($"Created and installed new certificate: {cert.Subject} (Thumbprint: {certThumbprint})");
         }
 
-        // Add site and bind HTTPS with certificate
+        // 1) Create the app pool + site with the HTTPS binding, but WITHOUT the SSL
+        //    certificate yet. Committing an https binding with no cert hash does not
+        //    touch HTTP.sys, so it cannot fail with 0x80070520.
         using (var serverManager = new ServerManager())
         {
             if (serverManager.Sites.Any(s => s.Name.Equals(siteName, StringComparison.OrdinalIgnoreCase)))
             {
-                Console.WriteLine("❌ A site with that name already exists in IIS.");
+                Console.WriteLine("ERROR: A site with that name already exists in IIS.");
                 return;
             }
 
-            Console.WriteLine($"⚙️ Creating application pool '{siteName}'...");
+            Console.WriteLine($"Creating application pool '{siteName}'...");
             var appPool = serverManager.ApplicationPools.Add(siteName);
             appPool.ManagedRuntimeVersion = "v4.0";
 
-            Console.WriteLine($"🌐 Creating new site '{siteName}'...");
+            Console.WriteLine($"Creating new site '{siteName}'...");
             var newSite = serverManager.Sites.Add(siteName, "https", $"*:{port}:", siteFolder);
             newSite.ApplicationDefaults.ApplicationPoolName = siteName;
 
-            Console.WriteLine($"🔏 Binding certificate to HTTPS...");
-            CertificateGenerator.BindCertificateToIIS(newSite, siteName, port: port, certThumbprint: cert.Thumbprint);
+            // Keep the new site stopped; it must be configured before its first start.
+            newSite.ServerAutoStart = false;
 
             serverManager.CommitChanges();
-            Console.WriteLine($"✅ Created new site '{siteName}' with HTTPS on port {port}.");
+            Console.WriteLine($"Created new site '{siteName}' with HTTPS on port {port}.");
         }
+
+        // 2) Bind the certificate as a separate step (this is the call that touches
+        //    HTTP.sys and can fail with 0x80070520 right after the cert was created).
+        Console.WriteLine($"Binding certificate to HTTPS...");
+        BindCertificate(siteName, port, certThumbprint);
 
         // Extract ZIP contents to the new site folder
         ExtractZipToFolder(zipFile, siteFolder);
 
-        // Start app pool and site
-        using (var serverManager = new ServerManager())
-        {
-            var appPool = serverManager.ApplicationPools[siteName];
-            if (appPool != null && appPool.State != ObjectState.Started)
-            {
-                appPool.Start();
-                Console.WriteLine($"🚀 App pool '{siteName}' started.");
-            }
-
-            var createdSite = serverManager.Sites[siteName];
-            if (createdSite != null)
-            {
-                createdSite.Start();
-                serverManager.CommitChanges();
-                Console.WriteLine($"🚀 Site '{siteName}' started.");
-            }
-        }
-
-        Console.WriteLine("🎉 Done.");
+        // Leave the new site stopped so it can be configured before first start.
+        Console.WriteLine("Done.");
+        Console.WriteLine($"The new site '{siteName}' is installed, but needs to be configured before starting.");
     }
 
     static void DeployToSite(Site selectedSite, string zipFile)
     {
         var physicalPath = selectedSite.Applications["/"].VirtualDirectories["/"].PhysicalPath;
-        Console.WriteLine($"📁 Site physical path: {physicalPath}");
+        Console.WriteLine($"Site physical path: {physicalPath}");
 
         using (var serverManager = new ServerManager())
         {
             // 1. Stop the site
-            Console.WriteLine("🛑 Stopping the IIS site...");
+            Console.WriteLine("Stopping the IIS site...");
 
             try
             {
@@ -207,11 +209,11 @@ class Program
                 {
                     selectedSite.Stop();
                     serverManager.CommitChanges();
-                    Console.WriteLine("✅ Site stopped.");
+                    Console.WriteLine("Site stopped.");
                 }
                 else
                 {
-                    Console.WriteLine("ℹ️ Site already stopped.");
+                    Console.WriteLine("Site already stopped.");
                 }
             }
             catch { }
@@ -222,10 +224,10 @@ class Program
 
             if (appPool != null && (appPool.State == ObjectState.Started || appPool.State == ObjectState.Starting))
             {
-                Console.WriteLine($"🛑 Stopping App Pool: {appPoolName}");
+                Console.WriteLine($"Stopping App Pool: {appPoolName}");
                 appPool.Stop();
                 serverManager.CommitChanges();
-                Console.WriteLine("✅ App Pool stopped.");
+                Console.WriteLine("App Pool stopped.");
             }
 
             // Optionally wait for shutdown
@@ -237,12 +239,12 @@ class Program
             Directory.CreateDirectory(backupFolder);
             string backupZip = Path.Combine(backupFolder, $"{selectedSite.Name}_backup_{DateTime.Now:yyyyMMdd_HHmmss}.zip");
 
-            Console.WriteLine("💾 Creating backup...");
+            Console.WriteLine("Creating backup...");
             ZipFile.CreateFromDirectory(physicalPath, backupZip, CompressionLevel.Optimal, includeBaseDirectory: false);
-            Console.WriteLine($"✅ Backup created: {backupZip}");
+            Console.WriteLine($"Backup created: {backupZip}");
 
             // 4. Delete old files/folders except protected ones
-            Console.WriteLine("🧹 Cleaning up site folder...");
+            Console.WriteLine("Cleaning up site folder...");
             foreach (var file in Directory.GetFiles(physicalPath))
             {
                 var fileName = Path.GetFileName(file);
@@ -254,7 +256,7 @@ class Program
                     }
                     catch (Exception ex)
                     {
-                        Console.WriteLine($"⚠️ Could not delete {fileName}: {ex.Message}");
+                        Console.WriteLine($"WARNING: Could not delete {fileName}: {ex.Message}");
                     }
                 }
             }
@@ -267,20 +269,20 @@ class Program
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"⚠️ Could not delete directory {dir}: {ex.Message}");
+                    Console.WriteLine($"WARNING: Could not delete directory {dir}: {ex.Message}");
                 }
             }
 
             // 5. Extract ZIP to site folder, skip protected files
             ExtractZipToFolder(zipFile, physicalPath);
 
-            Console.WriteLine("✅ Deployment complete.");
+            Console.WriteLine("Deployment complete.");
 
             // 6. Start App Pool
             if (appPool != null && appPool.State == ObjectState.Stopped)
             {
                 appPool.Start();
-                Console.WriteLine("🚀 App Pool started.");
+                Console.WriteLine("App Pool started.");
             }
 
         }
@@ -289,16 +291,16 @@ class Program
         if (selectedSite.State == ObjectState.Stopped)
         {
             selectedSite.Start();
-            Console.WriteLine("🚀 Site started.");
+            Console.WriteLine("Site started.");
         }
 
-        Console.WriteLine("🎉 Done.");
+        Console.WriteLine("Done.");
 
     }
 
     static void ExtractZipToFolder(string zipFile, string targetFolder)
     {
-        Console.WriteLine("📦 Extracting deployment files...");
+        Console.WriteLine("Extracting deployment files...");
         using (ZipArchive archive = ZipFile.OpenRead(zipFile))
         {
             foreach (var entry in archive.Entries)
@@ -322,7 +324,7 @@ class Program
                 string fileName = Path.GetFileName(relativePath);
                 if (IsProtectedFile(fileName))
                 {
-                    Console.WriteLine($"⚠️ Skipping protected file: {relativePath}");
+                    Console.WriteLine($"WARNING: Skipping protected file: {relativePath}");
                     continue;
                 }
 
@@ -335,11 +337,11 @@ class Program
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"⚠️ Failed to extract {relativePath}: {ex.Message}");
+                    Console.WriteLine($"WARNING: Failed to extract {relativePath}: {ex.Message}");
                 }
             }
         }
-        Console.WriteLine("✅ Deployment files extracted.");
+        Console.WriteLine("Deployment files extracted.");
     }
 
     static byte[] StringToByteArray(string hex)
@@ -360,6 +362,98 @@ class Program
         var lower = fileName.ToLowerInvariant();
         return lower == "appsettings.json"
             || lower == "web.config";
+    }
+
+    // Binds the certificate (already in LocalMachine\My) to the site's HTTPS binding.
+    // Tries IIS/Microsoft.Web.Administration first with a couple of retries, then falls
+    // back to netsh - which runs in a separate process and therefore reads the freshly
+    // created private key cleanly, exactly like a manual re-run of this tool would.
+    static void BindCertificate(string siteName, int port, string certThumbprint)
+    {
+        const int maxAttempts = 3;
+        for (int attempt = 1; attempt <= maxAttempts; attempt++)
+        {
+            try
+            {
+                using var serverManager = new ServerManager();
+                var site = serverManager.Sites[siteName];
+                if (site == null)
+                {
+                    Console.WriteLine($"ERROR: Site '{siteName}' not found while binding certificate.");
+                    return;
+                }
+
+                CertificateGenerator.BindCertificateToIIS(site, siteName, port: port, certThumbprint: certThumbprint);
+                serverManager.CommitChanges();
+                Console.WriteLine($"Certificate bound to HTTPS via IIS (attempt {attempt}).");
+                return;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"WARNING: IIS binding attempt {attempt} failed (0x{(uint)ex.HResult:X8}): {ex.Message}");
+                if (attempt < maxAttempts)
+                    Thread.Sleep(1500);
+            }
+        }
+
+        // Fallback: register the certificate with HTTP.sys directly. netsh is a fresh
+        // process, which sidesteps the 0x80070520 ("logon session does not exist") error.
+        Console.WriteLine("Falling back to 'netsh http add sslcert'...");
+        BindCertificateViaNetsh(port, certThumbprint);
+    }
+
+    static void BindCertificateViaNetsh(int port, string certThumbprint)
+    {
+        string appId = "{" + Guid.NewGuid() + "}";
+
+        // Remove any stale registration on this port first (ignore failures), then add.
+        RunNetsh($"http delete sslcert ipport=0.0.0.0:{port}", ignoreFailure: true);
+
+        bool ok = RunNetsh(
+            $"http add sslcert ipport=0.0.0.0:{port} certhash={certThumbprint} appid={appId} certstorename=MY",
+            ignoreFailure: false);
+
+        if (ok)
+            Console.WriteLine($"Certificate registered with HTTP.sys on port {port} via netsh.");
+        else
+            Console.WriteLine($"ERROR: Failed to register the certificate on port {port} via netsh.");
+    }
+
+    static bool RunNetsh(string arguments, bool ignoreFailure)
+    {
+        try
+        {
+            var psi = new ProcessStartInfo
+            {
+                FileName = "netsh",
+                Arguments = arguments,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+            };
+
+            using var proc = Process.Start(psi);
+            if (proc == null)
+                return false;
+
+            string stdout = proc.StandardOutput.ReadToEnd();
+            string stderr = proc.StandardError.ReadToEnd();
+            proc.WaitForExit();
+
+            if (!string.IsNullOrWhiteSpace(stdout))
+                Console.WriteLine(stdout.Trim());
+            if (!string.IsNullOrWhiteSpace(stderr))
+                Console.WriteLine(stderr.Trim());
+
+            return proc.ExitCode == 0;
+        }
+        catch (Exception ex)
+        {
+            if (!ignoreFailure)
+                Console.WriteLine($"WARNING: netsh {arguments} failed: {ex.Message}");
+            return false;
+        }
     }
 
     public class CertificateGenerator
@@ -410,27 +504,19 @@ class Program
 
         public static void BindCertificateToIIS(Site site, string siteName, string ip = "*", int port = 443, string certThumbprint = "")
         {
-
-            // Remove any existing binding on 443 if needed (optional)
+            // Remove any existing HTTPS binding on this port first.
             var existingBinding = site.Bindings
-                .FirstOrDefault(b => b.Protocol == "https" && b.EndPoint.Port == port);
+                .FirstOrDefault(b => b.Protocol == "https" && b.EndPoint != null && b.EndPoint.Port == port);
             if (existingBinding != null)
             {
                 site.Bindings.Remove(existingBinding);
             }
 
-            // Create the new HTTPS binding
-            var binding = site.Bindings.CreateElement("binding");
-
-            binding["protocol"] = "https";
-            binding["bindingInformation"] = $"{ip}:{port}:"; // hostname can go after the last colon if needed
-
-            // Certificate settings
-            binding["certificateStoreName"] = "My";
-            binding["certificateHash"] = StringToByteArray(certThumbprint);
-
-            site.Bindings.Add(binding);
-
+            // Use the strongly-typed SSL overload: it sets protocol=https and the
+            // certificate hash/store correctly. Setting certificateHash by hand on a
+            // raw element mis-marshals the byte[] and throws 0x80070459.
+            byte[] certHash = StringToByteArray(certThumbprint);
+            site.Bindings.Add($"{ip}:{port}:", certHash, "My");
         }
     }
 }
