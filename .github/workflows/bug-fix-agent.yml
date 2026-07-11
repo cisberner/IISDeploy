@@ -2,31 +2,117 @@ name: Bug Fix Agent
 
 on:
   issues:
-    types: [labeled]
+    types: [opened, edited, reopened, labeled]
 
 permissions:
   issues: write
 
 jobs:
   assign-to-copilot:
-    if: github.event.label.name == 'bug'
     runs-on: ubuntu-latest
     steps:
-      - name: Assign bug issue to GitHub Copilot coding agent
+      - name: Evaluate bug issue assignment
         uses: actions/github-script@v7
+        id: evaluate
         with:
           script: |
-            const issueNumber = context.payload.issue.number;
-            const owner = context.repo.owner;
-            const repo = context.repo.repo;
+            const issue = context.payload.issue;
+            const action = context.payload.action;
+            const text = `${issue.title}\n${issue.body || ""}`.toLowerCase();
+            const bugPatterns = [/\bbug\b/, /\berror\b/, /\bfail(ing|ure)?\b/, /\bexception\b/];
 
-            // Assign the issue to the GitHub Copilot coding agent.
-            // Copilot will create a branch, implement a fix, and open a pull request.
-            await github.rest.issues.addAssignees({
-              owner,
-              repo,
-              issue_number: issueNumber,
-              assignees: ['copilot'],
-            });
+            const bugDetectedFromContent = bugPatterns.some((pattern) => pattern.test(text));
+            const bugDetectedFromLabelEvent = action === "labeled" && context.payload.label?.name === "bug";
+            const issueHasBugLabel = (issue.labels || []).some((label) => label.name === "bug");
+            const alreadyAssignedToCopilot = (issue.assignees || []).some((assignee) =>
+              ["copilot", "copilot-swe-agent[bot]"].includes((assignee.login || "").toLowerCase())
+            );
+            const shouldAssign = !alreadyAssignedToCopilot && (bugDetectedFromContent || bugDetectedFromLabelEvent || issueHasBugLabel);
 
-            core.info(`Issue #${issueNumber} assigned to @copilot for automated bug fix.`);
+            core.setOutput("issue_number", String(issue.number));
+            core.setOutput("should_assign", shouldAssign ? "true" : "false");
+
+            if (shouldAssign) {
+              const reason = bugDetectedFromLabelEvent
+                ? "bug label added"
+                : issueHasBugLabel
+                  ? "issue already has bug label"
+                  : "bug keywords detected in issue content";
+              core.info(`Issue #${issue.number} will be assigned to Copilot (${reason}).`);
+            } else if (alreadyAssignedToCopilot) {
+              core.info(`Issue #${issue.number} is already assigned to Copilot.`);
+            } else {
+              core.info(`Issue #${issue.number} does not currently qualify for automated bug-fix assignment.`);
+            }
+
+      # Required repository secret:
+      #   COPILOT_AGENT_TOKEN - user token for the Copilot issue-assignment API.
+      # Required repository variable:
+      #   COPILOT_BUG_FIX_AGENT - custom agent identifier to use for bug issues.
+      # Optional repository variables:
+      #   COPILOT_BUG_FIX_BASE_BRANCH, COPILOT_BUG_FIX_INSTRUCTIONS, COPILOT_BUG_FIX_MODEL
+      - name: Validate Copilot bug-fix agent configuration
+        if: steps.evaluate.outputs.should_assign == 'true'
+        env:
+          COPILOT_AGENT_TOKEN: ${{ secrets.COPILOT_AGENT_TOKEN }}
+          COPILOT_BUG_FIX_AGENT: ${{ vars.COPILOT_BUG_FIX_AGENT }}
+        run: |
+          missing=0
+
+          if [ -z "$COPILOT_AGENT_TOKEN" ]; then
+            echo "::error::Set repository secret COPILOT_AGENT_TOKEN to a user token that can assign Copilot to issues."
+            missing=1
+          fi
+
+          if [ -z "$COPILOT_BUG_FIX_AGENT" ]; then
+            echo "::error::Set repository variable COPILOT_BUG_FIX_AGENT to the custom agent identifier you want Copilot to use."
+            missing=1
+          fi
+
+          if [ "$missing" -eq 1 ]; then
+            echo "::error::Use a fine-grained PAT or GitHub App user token with repository access for metadata, actions, contents, issues, and pull requests."
+            exit 1
+          fi
+
+      - name: Assign issue to the Copilot bug-fix agent
+        if: steps.evaluate.outputs.should_assign == 'true'
+        env:
+          COPILOT_AGENT_TOKEN: ${{ secrets.COPILOT_AGENT_TOKEN }}
+          COPILOT_BUG_FIX_AGENT: ${{ vars.COPILOT_BUG_FIX_AGENT }}
+          COPILOT_BUG_FIX_BASE_BRANCH: ${{ vars.COPILOT_BUG_FIX_BASE_BRANCH }}
+          COPILOT_BUG_FIX_INSTRUCTIONS: ${{ vars.COPILOT_BUG_FIX_INSTRUCTIONS }}
+          COPILOT_BUG_FIX_MODEL: ${{ vars.COPILOT_BUG_FIX_MODEL }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          ISSUE_NUMBER: ${{ steps.evaluate.outputs.issue_number }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          BASE_BRANCH="${COPILOT_BUG_FIX_BASE_BRANCH:-$DEFAULT_BRANCH}"
+          CUSTOM_INSTRUCTIONS="${COPILOT_BUG_FIX_INSTRUCTIONS:-Fix the bug described in this issue. Create a branch from the configured base branch, implement the fix, validate the change, and open a pull request for review.}"
+
+          payload="$(
+            jq -n \
+              --arg target_repo "$REPOSITORY" \
+              --arg base_branch "$BASE_BRANCH" \
+              --arg custom_instructions "$CUSTOM_INSTRUCTIONS" \
+              --arg custom_agent "$COPILOT_BUG_FIX_AGENT" \
+              --arg model "${COPILOT_BUG_FIX_MODEL:-}" \
+              '{
+                assignees: ["copilot-swe-agent[bot]"],
+                agent_assignment: (
+                  {
+                    target_repo: $target_repo,
+                    base_branch: $base_branch,
+                    custom_instructions: $custom_instructions,
+                    custom_agent: $custom_agent
+                  } + (if $model != "" then {model: $model} else {} end)
+                )
+              }'
+          )"
+
+          curl --fail-with-body --silent --show-error --location \
+            --request POST \
+            --header "Accept: application/vnd.github+json" \
+            --header "Authorization: ******" \
+            --header "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/$REPOSITORY/issues/$ISSUE_NUMBER/assignees" \
+            --data "$payload"
