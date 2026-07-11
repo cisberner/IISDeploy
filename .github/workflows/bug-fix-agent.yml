@@ -112,7 +112,7 @@ jobs:
           curl --fail-with-body --silent --show-error --location \
             --request POST \
             --header "Accept: application/vnd.github+json" \
-            --header "Authorization: ******" \
+            --header "Authorization: Bearer $COPILOT_AGENT_TOKEN" \
             --header "X-GitHub-Api-Version: 2022-11-28" \
             "https://api.github.com/repos/$REPOSITORY/issues/$ISSUE_NUMBER/assignees" \
             --data "$payload"
