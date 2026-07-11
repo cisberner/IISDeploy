@@ -8,6 +8,9 @@
     <UseWPF>true</UseWPF>
     <AssemblyName>IISDeployUI</AssemblyName>
     <RootNamespace>IISDeploy.Wpf</RootNamespace>
+    <!-- Embed debug symbols in the binary so single-file publish produces
+         one .exe with no separate .pdb next to it. -->
+    <DebugType>embedded</DebugType>
     <Title>IIS Deploy</Title>
     <Authors>Christian Isberner</Authors>
     <Company>Christian Isberner Software Consultant</Company>

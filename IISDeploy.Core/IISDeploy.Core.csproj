@@ -4,6 +4,8 @@
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <!-- Embed debug symbols so no separate .pdb is copied into a single-file publish. -->
+    <DebugType>embedded</DebugType>
     <Title>IIS Deploy Core</Title>
     <Authors>Christian Isberner</Authors>
     <Company>Christian Isberner Software Consultant</Company>
