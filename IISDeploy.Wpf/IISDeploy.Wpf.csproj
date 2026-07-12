@@ -11,6 +11,14 @@
     <!-- Embed debug symbols in the binary so single-file publish produces
          one .exe with no separate .pdb next to it. -->
     <DebugType>embedded</DebugType>
+    <!-- Single-file publish settings (versioned here so any publish - VS profile,
+         dotnet CLI or CI - produces one self-contained .exe). WPF ships native
+         libraries (wpfgfx_cor3, PresentationNative_cor3, D3DCompiler_47_cor3,
+         PenImc_cor3, vcruntime140_cor3); PublishSingleFile leaves native libs on
+         disk unless IncludeNativeLibrariesForSelfExtract embeds them. These are
+         inert unless PublishSingleFile is set (in the publish profile). -->
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
     <Title>IIS Deploy</Title>
     <Authors>Christian Isberner</Authors>
     <Company>Christian Isberner Software Consultant</Company>
