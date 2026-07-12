@@ -14,6 +14,12 @@ public enum WizardStep
     Deploy = 2,
 }
 
+public enum DeployMode
+{
+    UpdateExisting,
+    InstallNew,
+}
+
 public sealed class MainViewModel : ObservableObject
 {
     public MainViewModel()
@@ -69,7 +75,7 @@ public sealed class MainViewModel : ObservableObject
     public string HeaderTitle => CurrentStep switch
     {
         WizardStep.Package => "Select deployment package",
-        WizardStep.Configure => "Choose a target",
+        WizardStep.Configure => "Install or update",
         WizardStep.Deploy => IsFinished ? "Finished" : "Deploying",
         _ => "IIS Deploy",
     };
@@ -77,14 +83,36 @@ public sealed class MainViewModel : ObservableObject
     public string HeaderSubtitle => CurrentStep switch
     {
         WizardStep.Package => "Pick the ZIP file that contains the Publish folder to deploy.",
-        WizardStep.Configure => "Deploy into an existing IIS site or create a brand new one.",
+        WizardStep.Configure => "Install a brand new IIS site, or update an existing one.",
         WizardStep.Deploy => IsFinished ? "The operation has completed." : "Please wait while the site is being updated.",
         _ => string.Empty,
     };
 
     public string NextButtonText => CurrentStep == WizardStep.Configure
-        ? (IsCreateNewSelected ? "Create & deploy" : "Deploy")
+        ? (IsInstallMode ? "Create & deploy" : "Deploy")
         : "Next";
+
+    // -----------------------------------------------------------------
+    // Deployment mode (Install new vs. Update existing)
+    // -----------------------------------------------------------------
+    private DeployMode? _mode;
+    public DeployMode? Mode
+    {
+        get => _mode;
+        set
+        {
+            if (SetProperty(ref _mode, value))
+            {
+                OnPropertyChanged(nameof(IsUpdateMode));
+                OnPropertyChanged(nameof(IsInstallMode));
+                OnPropertyChanged(nameof(NextButtonText));
+                RefreshCommands();
+            }
+        }
+    }
+
+    public bool IsUpdateMode => Mode == DeployMode.UpdateExisting;
+    public bool IsInstallMode => Mode == DeployMode.InstallNew;
 
     // -----------------------------------------------------------------
     // Step 1 - package selection
@@ -142,15 +170,11 @@ public sealed class MainViewModel : ObservableObject
         set
         {
             if (SetProperty(ref _selectedTarget, value))
-            {
-                OnPropertyChanged(nameof(IsCreateNewSelected));
-                OnPropertyChanged(nameof(NextButtonText));
                 RefreshCommands();
-            }
         }
     }
 
-    public bool IsCreateNewSelected => SelectedTarget?.IsCreateNew ?? false;
+    public bool HasSites => Targets.Count > 0;
 
     private bool _isLoadingSites;
     public bool IsLoadingSites
@@ -247,8 +271,9 @@ public sealed class MainViewModel : ObservableObject
         return CurrentStep switch
         {
             WizardStep.Package => !string.IsNullOrEmpty(SelectedZipPath) && !IsBusy,
-            WizardStep.Configure => SelectedTarget != null && !IsBusy
-                && (!IsCreateNewSelected || !string.IsNullOrWhiteSpace(NewSiteName)),
+            WizardStep.Configure => Mode != null && !IsBusy
+                && ((IsUpdateMode && SelectedTarget != null)
+                    || (IsInstallMode && !string.IsNullOrWhiteSpace(NewSiteName))),
             _ => false,
         };
     }
@@ -278,6 +303,7 @@ public sealed class MainViewModel : ObservableObject
     private void StartOver()
     {
         LogEntries.Clear();
+        Mode = null;
         SelectedTarget = null;
         NewSiteName = string.Empty;
         NewSitePort = "443";
@@ -336,17 +362,20 @@ public sealed class MainViewModel : ObservableObject
 
             foreach (var site in sites)
                 Targets.Add(TargetOption.FromSite(site));
-
-            Targets.Add(TargetOption.CreateNewOption());
         }
         catch (Exception ex)
         {
             SitesError = $"Could not read the IIS configuration: {ex.Message}";
-            // Still allow creating a new site.
-            Targets.Add(TargetOption.CreateNewOption());
         }
         finally
         {
+            OnPropertyChanged(nameof(HasSites));
+
+            // Preselect the most likely action: update when sites exist, otherwise
+            // install. The user can still switch with the mode cards.
+            if (Mode == null)
+                Mode = HasSites ? DeployMode.UpdateExisting : DeployMode.InstallNew;
+
             IsLoadingSites = false;
             RefreshCommands();
         }
@@ -357,7 +386,9 @@ public sealed class MainViewModel : ObservableObject
     // -----------------------------------------------------------------
     private async Task RunDeploymentAsync()
     {
-        if (SelectedTarget == null || string.IsNullOrEmpty(SelectedZipPath))
+        if (string.IsNullOrEmpty(SelectedZipPath) || Mode == null)
+            return;
+        if (IsUpdateMode && SelectedTarget == null)
             return;
 
         LogEntries.Clear();
@@ -366,7 +397,8 @@ public sealed class MainViewModel : ObservableObject
         IsBusy = true;
 
         var zip = SelectedZipPath;
-        var target = SelectedTarget;
+        var install = IsInstallMode;
+        var siteName = SelectedTarget?.Site.Name;
         var newSiteName = NewSiteName;
         var port = int.TryParse(NewSitePort, out var parsedPort) ? parsedPort : 443;
 
@@ -379,10 +411,10 @@ public sealed class MainViewModel : ObservableObject
             {
                 var service = new DeploymentService(Log);
 
-                if (target.IsCreateNew)
+                if (install)
                     service.CreateNewSite(zip, newSiteName, port);
                 else
-                    service.DeployToSite(target.Site!.Name, zip);
+                    service.DeployToSite(siteName!, zip);
             });
         }
         catch (Exception ex)

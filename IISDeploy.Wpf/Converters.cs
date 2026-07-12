@@ -4,8 +4,24 @@ using System.Windows;
 using System.Windows.Data;
 using System.Windows.Media;
 using IISDeploy.Wpf.Models;
+using IISDeploy.Wpf.ViewModels;
 
 namespace IISDeploy.Wpf;
+
+/// <summary>
+/// Two-way binds a nullable <see cref="DeployMode"/> to a RadioButton's IsChecked:
+/// checked when the bound value equals the ConverterParameter enum name.
+/// </summary>
+public sealed class ModeToBoolConverter : IValueConverter
+{
+    public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
+        => value != null && parameter is string s && value.ToString() == s;
+
+    public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
+        => value is true && parameter is string s && Enum.TryParse<DeployMode>(s, out var mode)
+            ? mode
+            : Binding.DoNothing;
+}
 
 /// <summary>Shows just the file name of a full path.</summary>
 public sealed class PathToFileNameConverter : IValueConverter

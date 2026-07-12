@@ -21,6 +21,7 @@
         <local:PathToFileNameConverter x:Key="PathToFileName" />
         <local:SeverityToBrushConverter x:Key="SeverityToBrush" />
         <local:StepReachedToBrushConverter x:Key="StepReachedToBrush" />
+        <local:ModeToBoolConverter x:Key="ModeToBool" />
     </Window.Resources>
 
     <Border BorderBrush="{StaticResource BorderBrush}" BorderThickness="1">
@@ -208,93 +209,144 @@
 
                     <Grid>
                         <Grid.RowDefinitions>
-                            <RowDefinition Height="*" />
                             <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
                         </Grid.RowDefinitions>
 
-                        <!-- Loading -->
-                        <StackPanel Grid.Row="0" Orientation="Horizontal" VerticalAlignment="Top"
-                                    Visibility="{Binding IsLoadingSites, Converter={StaticResource BoolToVis}}">
-                            <local:Spinner Width="18" Height="18" VerticalAlignment="Center" />
-                            <TextBlock Text="Reading installed IIS sites&#8230;" Style="{StaticResource SubtitleText}"
-                                       VerticalAlignment="Center" Margin="10,0,0,0" />
-                        </StackPanel>
+                        <!-- Mode selector: two general options -->
+                        <UniformGrid Grid.Row="0" Rows="1" Columns="2" Margin="0,0,0,16">
+                            <RadioButton Style="{StaticResource ModeCard}" GroupName="mode" Margin="0,0,6,0"
+                                         IsChecked="{Binding Mode, Converter={StaticResource ModeToBool}, ConverterParameter=UpdateExisting}">
+                                <StackPanel Orientation="Horizontal">
+                                    <Border Width="38" Height="38" CornerRadius="9" Background="{StaticResource SurfaceHoverBrush}" Margin="0,0,14,0">
+                                        <TextBlock Text="&#xE895;" FontFamily="{StaticResource IconFont}" FontSize="16"
+                                                   Foreground="{StaticResource AccentBrush}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                    </Border>
+                                    <StackPanel VerticalAlignment="Center">
+                                        <TextBlock Text="Update existing site" Foreground="{StaticResource TextPrimaryBrush}"
+                                                   FontFamily="Segoe UI Semibold" FontSize="14" />
+                                        <TextBlock Text="Deploy into a site already on this server" Style="{StaticResource SubtitleText}" />
+                                    </StackPanel>
+                                </StackPanel>
+                            </RadioButton>
+                            <RadioButton Style="{StaticResource ModeCard}" GroupName="mode" Margin="6,0,0,0"
+                                         IsChecked="{Binding Mode, Converter={StaticResource ModeToBool}, ConverterParameter=InstallNew}">
+                                <StackPanel Orientation="Horizontal">
+                                    <Border Width="38" Height="38" CornerRadius="9" Background="{StaticResource SurfaceHoverBrush}" Margin="0,0,14,0">
+                                        <TextBlock Text="&#xE710;" FontFamily="{StaticResource IconFont}" FontSize="16"
+                                                   Foreground="{StaticResource AccentBrush}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                    </Border>
+                                    <StackPanel VerticalAlignment="Center">
+                                        <TextBlock Text="Install new site" Foreground="{StaticResource TextPrimaryBrush}"
+                                                   FontFamily="Segoe UI Semibold" FontSize="14" />
+                                        <TextBlock Text="Create a new IIS site with HTTPS + certificate" Style="{StaticResource SubtitleText}" />
+                                    </StackPanel>
+                                </StackPanel>
+                            </RadioButton>
+                        </UniformGrid>
 
-                        <!-- Sites error -->
-                        <Border Grid.Row="0" VerticalAlignment="Top" Margin="0,0,0,10"
-                                Visibility="{Binding HasSitesError, Converter={StaticResource BoolToVis}}"
-                                Background="#2A1620" BorderBrush="{StaticResource ErrorBrush}" BorderThickness="1"
-                                CornerRadius="8" Padding="14,10">
-                            <TextBlock Text="{Binding SitesError}" Foreground="{StaticResource ErrorBrush}" TextWrapping="Wrap" />
-                        </Border>
+                        <!-- Update existing: list of installed sites -->
+                        <Grid Grid.Row="1" Visibility="{Binding IsUpdateMode, Converter={StaticResource BoolToVis}}">
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Top"
+                                        Visibility="{Binding IsLoadingSites, Converter={StaticResource BoolToVis}}">
+                                <local:Spinner Width="18" Height="18" VerticalAlignment="Center" />
+                                <TextBlock Text="Reading installed IIS sites&#8230;" Style="{StaticResource SubtitleText}"
+                                           VerticalAlignment="Center" Margin="10,0,0,0" />
+                            </StackPanel>
 
-                        <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto" Margin="0,0,0,4"
-                                      Visibility="{Binding IsLoadingSites, Converter={StaticResource InverseBoolToVis}}">
-                            <ListBox ItemsSource="{Binding Targets}" SelectedItem="{Binding SelectedTarget}"
-                                     Background="Transparent" BorderThickness="0" HorizontalContentAlignment="Stretch">
-                                <ListBox.ItemContainerStyle>
-                                    <Style TargetType="ListBoxItem">
-                                        <Setter Property="Margin" Value="0,0,0,8" />
-                                        <Setter Property="Padding" Value="0" />
-                                        <Setter Property="Template">
-                                            <Setter.Value>
-                                                <ControlTemplate TargetType="ListBoxItem">
-                                                    <Border x:Name="bd" CornerRadius="10" Padding="16,13"
-                                                            Background="{StaticResource SurfaceBrush}"
-                                                            BorderBrush="{StaticResource BorderBrush}" BorderThickness="1">
-                                                        <Grid>
-                                                            <Grid.ColumnDefinitions>
-                                                                <ColumnDefinition Width="Auto" />
-                                                                <ColumnDefinition Width="*" />
-                                                                <ColumnDefinition Width="Auto" />
-                                                            </Grid.ColumnDefinitions>
-                                                            <Border Grid.Column="0" Width="38" Height="38" CornerRadius="9"
-                                                                    Background="{StaticResource SurfaceHoverBrush}" Margin="0,0,14,0">
-                                                                <TextBlock Text="{Binding Glyph}" FontFamily="{StaticResource IconFont}"
-                                                                           FontSize="16" Foreground="{StaticResource AccentBrush}"
-                                                                           HorizontalAlignment="Center" VerticalAlignment="Center" />
-                                                            </Border>
-                                                            <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                                                                <TextBlock Text="{Binding Title}" Foreground="{StaticResource TextPrimaryBrush}"
-                                                                           FontFamily="Segoe UI Semibold" FontSize="14" />
-                                                                <TextBlock Text="{Binding Subtitle}" Style="{StaticResource SubtitleText}"
-                                                                           TextTrimming="CharacterEllipsis" MaxWidth="620" HorizontalAlignment="Left" />
-                                                            </StackPanel>
-                                                            <TextBlock x:Name="check" Grid.Column="2" Text="&#xE73E;"
-                                                                       FontFamily="{StaticResource IconFont}" FontSize="16"
-                                                                       Foreground="{StaticResource AccentBrush}" VerticalAlignment="Center"
-                                                                       Opacity="0" />
-                                                        </Grid>
-                                                    </Border>
-                                                    <ControlTemplate.Triggers>
-                                                        <Trigger Property="IsMouseOver" Value="True">
-                                                            <Setter TargetName="bd" Property="Background" Value="{StaticResource SurfaceAltBrush}" />
-                                                        </Trigger>
-                                                        <Trigger Property="IsSelected" Value="True">
-                                                            <Setter TargetName="bd" Property="BorderBrush" Value="{StaticResource AccentBrush}" />
-                                                            <Setter TargetName="bd" Property="BorderThickness" Value="2" />
-                                                            <Setter TargetName="check" Property="Opacity" Value="1" />
-                                                        </Trigger>
-                                                    </ControlTemplate.Triggers>
-                                                </ControlTemplate>
-                                            </Setter.Value>
-                                        </Setter>
-                                    </Style>
-                                </ListBox.ItemContainerStyle>
-                            </ListBox>
-                        </ScrollViewer>
+                            <Grid Visibility="{Binding IsLoadingSites, Converter={StaticResource InverseBoolToVis}}">
+                                <!-- Sites error -->
+                                <Border VerticalAlignment="Top"
+                                        Visibility="{Binding HasSitesError, Converter={StaticResource BoolToVis}}"
+                                        Background="#2A1620" BorderBrush="{StaticResource ErrorBrush}" BorderThickness="1"
+                                        CornerRadius="8" Padding="14,10">
+                                    <TextBlock Text="{Binding SitesError}" Foreground="{StaticResource ErrorBrush}" TextWrapping="Wrap" />
+                                </Border>
 
-                        <!-- New site details, revealed when "create new" is selected -->
-                        <Border Grid.Row="1" Margin="0,6,0,0" CornerRadius="10" Padding="16"
+                                <Grid Visibility="{Binding HasSitesError, Converter={StaticResource InverseBoolToVis}}">
+                                    <!-- Empty: no sites installed -->
+                                    <Border VerticalAlignment="Top"
+                                            Visibility="{Binding HasSites, Converter={StaticResource InverseBoolToVis}}"
+                                            Background="{StaticResource SurfaceAltBrush}" BorderBrush="{StaticResource BorderBrush}"
+                                            BorderThickness="1" CornerRadius="8" Padding="14,12">
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="&#xE7BA;" FontFamily="{StaticResource IconFont}" FontSize="16"
+                                                       Foreground="{StaticResource WarningBrush}" VerticalAlignment="Center" Margin="0,0,12,0" />
+                                            <TextBlock Text="No IIS sites are installed on this server. Choose &quot;Install new site&quot; instead."
+                                                       Style="{StaticResource SubtitleText}" VerticalAlignment="Center" MaxWidth="600" />
+                                        </StackPanel>
+                                    </Border>
+
+                                    <ScrollViewer VerticalScrollBarVisibility="Auto"
+                                                  Visibility="{Binding HasSites, Converter={StaticResource BoolToVis}}">
+                                        <ListBox ItemsSource="{Binding Targets}" SelectedItem="{Binding SelectedTarget}"
+                                                 Background="Transparent" BorderThickness="0" HorizontalContentAlignment="Stretch">
+                                            <ListBox.ItemContainerStyle>
+                                                <Style TargetType="ListBoxItem">
+                                                    <Setter Property="Margin" Value="0,0,0,8" />
+                                                    <Setter Property="Padding" Value="0" />
+                                                    <Setter Property="Template">
+                                                        <Setter.Value>
+                                                            <ControlTemplate TargetType="ListBoxItem">
+                                                                <Border x:Name="bd" CornerRadius="10" Padding="16,13"
+                                                                        Background="{StaticResource SurfaceBrush}"
+                                                                        BorderBrush="{StaticResource BorderBrush}" BorderThickness="1">
+                                                                    <Grid>
+                                                                        <Grid.ColumnDefinitions>
+                                                                            <ColumnDefinition Width="Auto" />
+                                                                            <ColumnDefinition Width="*" />
+                                                                            <ColumnDefinition Width="Auto" />
+                                                                        </Grid.ColumnDefinitions>
+                                                                        <Border Grid.Column="0" Width="38" Height="38" CornerRadius="9"
+                                                                                Background="{StaticResource SurfaceHoverBrush}" Margin="0,0,14,0">
+                                                                            <TextBlock Text="{Binding Glyph}" FontFamily="{StaticResource IconFont}"
+                                                                                       FontSize="16" Foreground="{StaticResource AccentBrush}"
+                                                                                       HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                                                        </Border>
+                                                                        <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                                                            <TextBlock Text="{Binding Title}" Foreground="{StaticResource TextPrimaryBrush}"
+                                                                                       FontFamily="Segoe UI Semibold" FontSize="14" />
+                                                                            <TextBlock Text="{Binding Subtitle}" Style="{StaticResource SubtitleText}"
+                                                                                       TextTrimming="CharacterEllipsis" MaxWidth="620" HorizontalAlignment="Left" />
+                                                                        </StackPanel>
+                                                                        <TextBlock x:Name="check" Grid.Column="2" Text="&#xE73E;"
+                                                                                   FontFamily="{StaticResource IconFont}" FontSize="16"
+                                                                                   Foreground="{StaticResource AccentBrush}" VerticalAlignment="Center"
+                                                                                   Opacity="0" />
+                                                                    </Grid>
+                                                                </Border>
+                                                                <ControlTemplate.Triggers>
+                                                                    <Trigger Property="IsMouseOver" Value="True">
+                                                                        <Setter TargetName="bd" Property="Background" Value="{StaticResource SurfaceAltBrush}" />
+                                                                    </Trigger>
+                                                                    <Trigger Property="IsSelected" Value="True">
+                                                                        <Setter TargetName="bd" Property="BorderBrush" Value="{StaticResource AccentBrush}" />
+                                                                        <Setter TargetName="bd" Property="BorderThickness" Value="2" />
+                                                                        <Setter TargetName="check" Property="Opacity" Value="1" />
+                                                                    </Trigger>
+                                                                </ControlTemplate.Triggers>
+                                                            </ControlTemplate>
+                                                        </Setter.Value>
+                                                    </Setter>
+                                                </Style>
+                                            </ListBox.ItemContainerStyle>
+                                        </ListBox>
+                                    </ScrollViewer>
+                                </Grid>
+                            </Grid>
+                        </Grid>
+
+                        <!-- Install new: name + port form -->
+                        <Border Grid.Row="1" VerticalAlignment="Top" CornerRadius="10" Padding="16"
                                 Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1"
-                                Visibility="{Binding IsCreateNewSelected, Converter={StaticResource BoolToVis}}">
+                                Visibility="{Binding IsInstallMode, Converter={StaticResource BoolToVis}}">
                             <Border.RenderTransform>
                                 <TranslateTransform Y="0" />
                             </Border.RenderTransform>
                             <Border.Style>
                                 <Style TargetType="Border">
                                     <Style.Triggers>
-                                        <DataTrigger Binding="{Binding IsCreateNewSelected}" Value="True">
+                                        <DataTrigger Binding="{Binding IsInstallMode}" Value="True">
                                             <DataTrigger.EnterActions>
                                                 <BeginStoryboard>
                                                     <Storyboard>
