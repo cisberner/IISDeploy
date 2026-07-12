@@ -231,6 +231,7 @@
                                 </StackPanel>
                             </RadioButton>
                             <RadioButton Style="{StaticResource ModeCard}" GroupName="mode" Margin="6,0,0,0"
+                                         Checked="InstallModeCard_Checked"
                                          IsChecked="{Binding Mode, Converter={StaticResource ModeToBool}, ConverterParameter=InstallNew}">
                                 <StackPanel Orientation="Horizontal">
                                     <Border Width="38" Height="38" CornerRadius="9" Background="{StaticResource SurfaceHoverBrush}" Margin="0,0,14,0">
@@ -365,22 +366,37 @@
                                     </Style.Triggers>
                                 </Style>
                             </Border.Style>
-                            <Grid>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="130" />
-                                </Grid.ColumnDefinitions>
-                                <StackPanel Grid.Column="0" Margin="0,0,14,0">
-                                    <TextBlock Text="NEW SITE NAME" Style="{StaticResource LabelText}" />
-                                    <TextBox Style="{StaticResource ModernTextBox}"
-                                             Text="{Binding NewSiteName, UpdateSourceTrigger=PropertyChanged}" />
+                            <StackPanel>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="130" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Grid.Column="0" Margin="0,0,14,0">
+                                        <TextBlock Text="NEW SITE NAME" Style="{StaticResource LabelText}" />
+                                        <TextBox x:Name="NewSiteNameBox" Style="{StaticResource ModernTextBox}"
+                                                 Text="{Binding NewSiteName, UpdateSourceTrigger=PropertyChanged}" />
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="1">
+                                        <TextBlock Text="PORT" Style="{StaticResource LabelText}" />
+                                        <TextBox Style="{StaticResource ModernTextBox}"
+                                                 Text="{Binding NewSitePort, UpdateSourceTrigger=PropertyChanged}" />
+                                    </StackPanel>
+                                </Grid>
+
+                                <!-- Optional appsettings.json / web.config creation -->
+                                <CheckBox Margin="0,16,0,0" Style="{StaticResource ModernCheckBox}"
+                                          IsChecked="{Binding CreateConfigFiles}"
+                                          Content="Create appsettings.json and web.config for this site" />
+                                <StackPanel Orientation="Horizontal" Margin="30,10,0,0"
+                                            Visibility="{Binding CreateConfigFiles, Converter={StaticResource BoolToVis}}">
+                                    <Button Content="Edit file contents&#8230;" Style="{StaticResource SecondaryButton}"
+                                            Command="{Binding EditFilesCommand}" />
+                                    <TextBlock VerticalAlignment="Center" Margin="12,0,0,0" MaxWidth="440"
+                                               Style="{StaticResource SubtitleText}"
+                                               Text="Seeded from appsettings.deployment.json and web.config in the package." />
                                 </StackPanel>
-                                <StackPanel Grid.Column="1">
-                                    <TextBlock Text="PORT" Style="{StaticResource LabelText}" />
-                                    <TextBox Style="{StaticResource ModernTextBox}"
-                                             Text="{Binding NewSitePort, UpdateSourceTrigger=PropertyChanged}" />
-                                </StackPanel>
-                            </Grid>
+                            </StackPanel>
                         </Border>
                     </Grid>
                 </Grid>

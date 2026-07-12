@@ -34,6 +34,32 @@ public sealed class DeploymentService
         return Directory.GetFiles(folder, "*.zip");
     }
 
+    // Template files shipped inside the deployment ZIP (under Publish/) used to
+    // seed a new site's appsettings.json and web.config.
+    public const string AppSettingsTemplateName = "appsettings.deployment.json";
+    public const string WebConfigTemplateName = "web.config";
+
+    /// <summary>
+    /// Reads the text of a file stored under the "Publish/" folder of the ZIP,
+    /// or null when the ZIP or entry does not exist. Used to load the config
+    /// templates for a new site.
+    /// </summary>
+    public static string? ReadPublishFileText(string zipFile, string fileName)
+    {
+        if (string.IsNullOrWhiteSpace(zipFile) || !File.Exists(zipFile))
+            return null;
+
+        using var archive = ZipFile.OpenRead(zipFile);
+        string target = "Publish/" + fileName;
+        var entry = archive.Entries.FirstOrDefault(e =>
+            e.FullName.Replace('\\', '/').Equals(target, StringComparison.OrdinalIgnoreCase));
+        if (entry == null)
+            return null;
+
+        using var reader = new StreamReader(entry.Open());
+        return reader.ReadToEnd();
+    }
+
     /// <summary>
     /// Enumerates the installed IIS sites.
     /// </summary>
@@ -79,7 +105,8 @@ public sealed class DeploymentService
     /// and extracts the deployment ZIP into it. Returns false when a validation
     /// check prevents the site from being created.
     /// </summary>
-    public bool CreateNewSite(string zipFile, string siteName, int port = 443)
+    public bool CreateNewSite(string zipFile, string siteName, int port = 443,
+        string? appSettingsContent = null, string? webConfigContent = null)
     {
         siteName = siteName?.Trim() ?? string.Empty;
 
@@ -100,17 +127,15 @@ public sealed class DeploymentService
 
         Directory.CreateDirectory(siteFolder);
 
-        // Copy appsettings.json.sample and web.config if they exist
-        string appSettingsFile = Path.Combine(Path.GetDirectoryName(zipFile)!, "appsettings.json.sample");
-        if (File.Exists(appSettingsFile))
-        {
-            File.Copy(appSettingsFile, Path.Combine(siteFolder, "appsettings.json"), overwrite: false);
-        }
-        string webConfigFile = Path.Combine(Path.GetDirectoryName(zipFile)!, "web.config.sample");
-        if (File.Exists(webConfigFile))
-        {
-            File.Copy(webConfigFile, Path.Combine(siteFolder, "web.config"), overwrite: false);
-        }
+        // Seed appsettings.json / web.config for the new site. When the user opted in
+        // and supplied content (created from the deployment templates in the ZIP), write
+        // that; otherwise fall back to any *.sample file next to the ZIP. Both files are
+        // protected during extraction, so the extract step never overwrites them.
+        string? zipDir = Path.GetDirectoryName(zipFile);
+        WriteInitialConfigFile(siteFolder, "appsettings.json", appSettingsContent,
+            zipDir != null ? Path.Combine(zipDir, "appsettings.json.sample") : null);
+        WriteInitialConfigFile(siteFolder, "web.config", webConfigContent,
+            zipDir != null ? Path.Combine(zipDir, "web.config.sample") : null);
 
         string certSubject = $"CN={siteName}.local";
 
@@ -362,6 +387,21 @@ public sealed class DeploymentService
             }
         }
         Log("Deployment files extracted.");
+    }
+
+    private void WriteInitialConfigFile(string siteFolder, string fileName, string? content, string? samplePath)
+    {
+        string target = Path.Combine(siteFolder, fileName);
+
+        if (content != null)
+        {
+            File.WriteAllText(target, content);
+            Log($"Created {fileName}.");
+        }
+        else if (samplePath != null && File.Exists(samplePath))
+        {
+            File.Copy(samplePath, target, overwrite: false);
+        }
     }
 
     private static bool IsProtectedFile(string fileName)

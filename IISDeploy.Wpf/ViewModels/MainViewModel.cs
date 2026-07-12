@@ -4,6 +4,7 @@ using System.Windows;
 using IISDeploy.Core;
 using IISDeploy.Wpf.Models;
 using IISDeploy.Wpf.Mvvm;
+using IISDeploy.Wpf.Views;
 
 namespace IISDeploy.Wpf.ViewModels;
 
@@ -28,6 +29,7 @@ public sealed class MainViewModel : ObservableObject
         BackCommand = new RelayCommand(GoBack, CanGoBack);
         NextCommand = new RelayCommand(GoNext, CanGoNext);
         StartOverCommand = new RelayCommand(StartOver, () => IsFinished);
+        EditFilesCommand = new RelayCommand(EditConfigFiles, () => CreateConfigFiles);
         ExitCommand = new RelayCommand(() => Application.Current.Shutdown());
 
         // Default to the folder the tool is launched from - the same "drop the tool
@@ -42,6 +44,7 @@ public sealed class MainViewModel : ObservableObject
     public RelayCommand BackCommand { get; }
     public RelayCommand NextCommand { get; }
     public RelayCommand StartOverCommand { get; }
+    public RelayCommand EditFilesCommand { get; }
     public RelayCommand ExitCommand { get; }
 
     // -----------------------------------------------------------------
@@ -139,6 +142,7 @@ public sealed class MainViewModel : ObservableObject
             if (SetProperty(ref _selectedZipPath, value))
             {
                 OnPropertyChanged(nameof(SelectedZipName));
+                _templatesLoaded = false; // reload config templates from the new package
                 RefreshCommands();
             }
         }
@@ -211,6 +215,67 @@ public sealed class MainViewModel : ObservableObject
     {
         get => _newSitePort;
         set => SetProperty(ref _newSitePort, value);
+    }
+
+    // Optional: create appsettings.json + web.config for the new site, seeded from
+    // the deployment templates (appsettings.deployment.json / web.config) in the ZIP.
+    private bool _templatesLoaded;
+
+    private bool _createConfigFiles;
+    public bool CreateConfigFiles
+    {
+        get => _createConfigFiles;
+        set
+        {
+            if (SetProperty(ref _createConfigFiles, value))
+            {
+                if (value)
+                    LoadConfigTemplates();
+                RefreshCommands();
+            }
+        }
+    }
+
+    private string _appSettingsContent = string.Empty;
+    public string AppSettingsContent
+    {
+        get => _appSettingsContent;
+        set => SetProperty(ref _appSettingsContent, value);
+    }
+
+    private string _webConfigContent = string.Empty;
+    public string WebConfigContent
+    {
+        get => _webConfigContent;
+        set => SetProperty(ref _webConfigContent, value);
+    }
+
+    private void LoadConfigTemplates()
+    {
+        if (_templatesLoaded || string.IsNullOrEmpty(SelectedZipPath))
+            return;
+
+        AppSettingsContent = DeploymentService.ReadPublishFileText(
+            SelectedZipPath, DeploymentService.AppSettingsTemplateName) ?? string.Empty;
+        WebConfigContent = DeploymentService.ReadPublishFileText(
+            SelectedZipPath, DeploymentService.WebConfigTemplateName) ?? string.Empty;
+        _templatesLoaded = true;
+    }
+
+    private void EditConfigFiles()
+    {
+        LoadConfigTemplates();
+
+        var window = new ConfigFilesWindow(AppSettingsContent, WebConfigContent)
+        {
+            Owner = Application.Current.MainWindow,
+        };
+
+        if (window.ShowDialog() == true)
+        {
+            AppSettingsContent = window.AppSettingsText;
+            WebConfigContent = window.WebConfigText;
+        }
     }
 
     // -----------------------------------------------------------------
@@ -307,6 +372,10 @@ public sealed class MainViewModel : ObservableObject
         SelectedTarget = null;
         NewSiteName = string.Empty;
         NewSitePort = "443";
+        CreateConfigFiles = false;
+        AppSettingsContent = string.Empty;
+        WebConfigContent = string.Empty;
+        _templatesLoaded = false;
         IsFinished = false;
         HadError = false;
         CurrentStep = WizardStep.Package;
@@ -402,6 +471,11 @@ public sealed class MainViewModel : ObservableObject
         var newSiteName = NewSiteName;
         var port = int.TryParse(NewSitePort, out var parsedPort) ? parsedPort : 443;
 
+        // Only create appsettings.json / web.config when installing a new site and the
+        // user opted in; otherwise leave them null so they stay protected/untouched.
+        var appSettings = install && CreateConfigFiles ? AppSettingsContent : null;
+        var webConfig = install && CreateConfigFiles ? WebConfigContent : null;
+
         var dispatcher = Application.Current.Dispatcher;
         void Log(string message) => dispatcher.Invoke(() => AppendLog(message));
 
@@ -412,7 +486,7 @@ public sealed class MainViewModel : ObservableObject
                 var service = new DeploymentService(Log);
 
                 if (install)
-                    service.CreateNewSite(zip, newSiteName, port);
+                    service.CreateNewSite(zip, newSiteName, port, appSettings, webConfig);
                 else
                     service.DeployToSite(siteName!, zip);
             });
@@ -442,5 +516,6 @@ public sealed class MainViewModel : ObservableObject
         BackCommand.RaiseCanExecuteChanged();
         NextCommand.RaiseCanExecuteChanged();
         StartOverCommand.RaiseCanExecuteChanged();
+        EditFilesCommand.RaiseCanExecuteChanged();
     }
 }

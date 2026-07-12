@@ -154,6 +154,39 @@
         </Setter>
     </Style>
 
+    <!-- ============================ CheckBox ============================ -->
+    <Style x:Key="ModernCheckBox" TargetType="CheckBox">
+        <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
+        <Setter Property="FontFamily" Value="Segoe UI" />
+        <Setter Property="FontSize" Value="13" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="CheckBox">
+                    <StackPanel Orientation="Horizontal" Background="Transparent">
+                        <Border x:Name="box" Width="20" Height="20" CornerRadius="5" VerticalAlignment="Center"
+                                Background="{StaticResource SurfaceAltBrush}"
+                                BorderBrush="{StaticResource BorderBrush}" BorderThickness="1">
+                            <TextBlock x:Name="check" Text="&#xE73E;" FontFamily="{StaticResource IconFont}" FontSize="11"
+                                       Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center" Opacity="0" />
+                        </Border>
+                        <ContentPresenter Margin="10,0,0,0" VerticalAlignment="Center" />
+                    </StackPanel>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="box" Property="BorderBrush" Value="{StaticResource AccentBrush}" />
+                        </Trigger>
+                        <Trigger Property="IsChecked" Value="True">
+                            <Setter TargetName="box" Property="Background" Value="{StaticResource AccentBrush}" />
+                            <Setter TargetName="box" Property="BorderBrush" Value="{StaticResource AccentBrush}" />
+                            <Setter TargetName="check" Property="Opacity" Value="1" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
     <!-- ============================ TextBox ============================ -->
     <Style x:Key="ModernTextBox" TargetType="TextBox">
         <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
