@@ -1,9 +1,10 @@
-<Window x:Class="IISDeploy.Wpf.Views.ConfigFilesWindow"
+<Window x:Class="IISDeploy.Wpf.Views.FileEditorWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Configure site files" Height="640" Width="780" MinHeight="420" MinWidth="540"
+        Title="Edit file" Height="760" Width="1000" MinHeight="460" MinWidth="620"
         WindowStartupLocation="CenterOwner"
         WindowStyle="None"
+        ResizeMode="CanResize"
         Background="{StaticResource WindowBgBrush}"
         FontFamily="Segoe UI"
         UseLayoutRounding="True">
@@ -20,13 +21,13 @@
             <Setter Property="CaretBrush" Value="{StaticResource TextPrimaryBrush}" />
             <Setter Property="BorderThickness" Value="0" />
             <Setter Property="FontFamily" Value="Consolas" />
-            <Setter Property="FontSize" Value="13" />
+            <Setter Property="FontSize" Value="13.5" />
             <Setter Property="AcceptsReturn" Value="True" />
             <Setter Property="AcceptsTab" Value="True" />
             <Setter Property="TextWrapping" Value="NoWrap" />
             <Setter Property="VerticalScrollBarVisibility" Value="Auto" />
             <Setter Property="HorizontalScrollBarVisibility" Value="Auto" />
-            <Setter Property="Padding" Value="12" />
+            <Setter Property="Padding" Value="14" />
         </Style>
     </Window.Resources>
 
@@ -34,7 +35,6 @@
         <Grid>
             <Grid.RowDefinitions>
                 <RowDefinition Height="46" />
-                <RowDefinition Height="Auto" />
                 <RowDefinition Height="*" />
                 <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
@@ -42,9 +42,9 @@
             <!-- Title bar -->
             <Grid Grid.Row="0" Background="{StaticResource HeaderGradientBrush}">
                 <StackPanel Orientation="Horizontal" Margin="16,0,0,0" VerticalAlignment="Center">
-                    <TextBlock Text="&#xE713;" FontFamily="{StaticResource IconFont}" FontSize="14"
+                    <TextBlock Text="&#xE7C3;" FontFamily="{StaticResource IconFont}" FontSize="14"
                                Foreground="{StaticResource AccentBrush}" VerticalAlignment="Center" />
-                    <TextBlock Text="Configure site files" Foreground="{StaticResource TextPrimaryBrush}"
+                    <TextBlock x:Name="HeaderText" Text="Edit file" Foreground="{StaticResource TextPrimaryBrush}"
                                FontFamily="Segoe UI Semibold" FontSize="13" VerticalAlignment="Center" Margin="10,0,0,0" />
                 </StackPanel>
                 <Button HorizontalAlignment="Right" Width="46" Height="46" Click="CloseButton_Click"
@@ -66,34 +66,14 @@
                 </Button>
             </Grid>
 
-            <!-- Intro -->
-            <TextBlock Grid.Row="1" Margin="24,18,24,6" Style="{StaticResource SubtitleText}"
-                       Text="These files will be created in the new site's folder. They are seeded from appsettings.deployment.json and web.config in the deployment package." />
-
-            <!-- Editors -->
-            <Grid Grid.Row="2" Margin="24,6,24,6">
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto" />
-                    <RowDefinition Height="*" />
-                    <RowDefinition Height="Auto" />
-                    <RowDefinition Height="*" />
-                </Grid.RowDefinitions>
-
-                <TextBlock Grid.Row="0" Text="appsettings.json" Style="{StaticResource LabelText}" />
-                <Border Grid.Row="1" CornerRadius="8" Background="#0A0E16" Margin="0,0,0,12"
-                        BorderBrush="{StaticResource BorderBrush}" BorderThickness="1">
-                    <TextBox x:Name="AppSettingsBox" Style="{StaticResource CodeEditor}" />
-                </Border>
-
-                <TextBlock Grid.Row="2" Text="web.config" Style="{StaticResource LabelText}" />
-                <Border Grid.Row="3" CornerRadius="8" Background="#0A0E16"
-                        BorderBrush="{StaticResource BorderBrush}" BorderThickness="1">
-                    <TextBox x:Name="WebConfigBox" Style="{StaticResource CodeEditor}" />
-                </Border>
-            </Grid>
+            <!-- Editor -->
+            <Border Grid.Row="1" Margin="24,18,24,12" CornerRadius="8" Background="#0A0E16"
+                    BorderBrush="{StaticResource BorderBrush}" BorderThickness="1">
+                <TextBox x:Name="EditorBox" Style="{StaticResource CodeEditor}" />
+            </Border>
 
             <!-- Footer -->
-            <Border Grid.Row="3" Background="{StaticResource HeaderGradientBrush}" BorderBrush="{StaticResource BorderBrush}"
+            <Border Grid.Row="2" Background="{StaticResource HeaderGradientBrush}" BorderBrush="{StaticResource BorderBrush}"
                     BorderThickness="0,1,0,0" Padding="24,14">
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
                     <Button Content="Cancel" Style="{StaticResource SecondaryButton}" Margin="0,0,10,0" Click="CancelButton_Click" />

@@ -3,19 +3,20 @@ using System.Windows;
 namespace IISDeploy.Wpf.Views;
 
 /// <summary>
-/// Modal editor for the new site's appsettings.json and web.config contents.
+/// Modal editor for a single configuration file (appsettings.json or web.config).
+/// Resizable, with a large monospace text area for long files.
 /// </summary>
-public partial class ConfigFilesWindow : Window
+public partial class FileEditorWindow : Window
 {
-    public ConfigFilesWindow(string appSettings, string webConfig)
+    public FileEditorWindow(string fileName, string content)
     {
         InitializeComponent();
-        AppSettingsBox.Text = appSettings ?? string.Empty;
-        WebConfigBox.Text = webConfig ?? string.Empty;
+        Title = $"Edit {fileName}";
+        HeaderText.Text = $"Edit {fileName}";
+        EditorBox.Text = content ?? string.Empty;
     }
 
-    public string AppSettingsText => AppSettingsBox.Text;
-    public string WebConfigText => WebConfigBox.Text;
+    public string EditedText => EditorBox.Text;
 
     private void SaveButton_Click(object sender, RoutedEventArgs e)
     {

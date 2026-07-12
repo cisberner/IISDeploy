@@ -187,6 +187,35 @@
         </Setter>
     </Style>
 
+    <!-- ============================ Link button ============================ -->
+    <Style x:Key="LinkButton" TargetType="Button">
+        <Setter Property="Foreground" Value="{StaticResource AccentBrush}" />
+        <Setter Property="FontFamily" Value="Segoe UI" />
+        <Setter Property="FontSize" Value="13" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <StackPanel Orientation="Horizontal" Background="Transparent">
+                        <TextBlock Text="&#xE70F;" FontFamily="{StaticResource IconFont}" FontSize="12"
+                                   Foreground="{TemplateBinding Foreground}" VerticalAlignment="Center" Margin="0,0,6,0" />
+                        <TextBlock x:Name="label" Text="{TemplateBinding Content}" Foreground="{TemplateBinding Foreground}"
+                                   VerticalAlignment="Center" />
+                    </StackPanel>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="label" Property="TextDecorations" Value="Underline" />
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}" />
+                            <Setter Property="Cursor" Value="Arrow" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
     <!-- ============================ TextBox ============================ -->
     <Style x:Key="ModernTextBox" TargetType="TextBox">
         <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />

@@ -384,17 +384,18 @@
                                     </StackPanel>
                                 </Grid>
 
-                                <!-- Optional appsettings.json / web.config creation -->
+                                <!-- Optional configuration files for the new site -->
                                 <CheckBox Margin="0,16,0,0" Style="{StaticResource ModernCheckBox}"
                                           IsChecked="{Binding CreateConfigFiles}"
-                                          Content="Create appsettings.json and web.config for this site" />
+                                          Content="Add configuration files for this site" />
                                 <StackPanel Orientation="Horizontal" Margin="30,10,0,0"
                                             Visibility="{Binding CreateConfigFiles, Converter={StaticResource BoolToVis}}">
-                                    <Button Content="Edit file contents&#8230;" Style="{StaticResource SecondaryButton}"
-                                            Command="{Binding EditFilesCommand}" />
-                                    <TextBlock VerticalAlignment="Center" Margin="12,0,0,0" MaxWidth="440"
-                                               Style="{StaticResource SubtitleText}"
-                                               Text="Seeded from appsettings.deployment.json and web.config in the package." />
+                                    <Button Content="Edit appsettings.json" Style="{StaticResource LinkButton}"
+                                            Command="{Binding EditAppSettingsCommand}" />
+                                    <TextBlock Text="|" Foreground="{StaticResource BorderBrush}"
+                                               VerticalAlignment="Center" Margin="14,0,14,0" />
+                                    <Button Content="Edit web.config" Style="{StaticResource LinkButton}"
+                                            Command="{Binding EditWebConfigCommand}" />
                                 </StackPanel>
                             </StackPanel>
                         </Border>

@@ -29,7 +29,8 @@ public sealed class MainViewModel : ObservableObject
         BackCommand = new RelayCommand(GoBack, CanGoBack);
         NextCommand = new RelayCommand(GoNext, CanGoNext);
         StartOverCommand = new RelayCommand(StartOver, () => IsFinished);
-        EditFilesCommand = new RelayCommand(EditConfigFiles, () => CreateConfigFiles);
+        EditAppSettingsCommand = new RelayCommand(EditAppSettings, () => CreateConfigFiles);
+        EditWebConfigCommand = new RelayCommand(EditWebConfig, () => CreateConfigFiles);
         ExitCommand = new RelayCommand(() => Application.Current.Shutdown());
 
         // Default to the folder the tool is launched from - the same "drop the tool
@@ -44,7 +45,8 @@ public sealed class MainViewModel : ObservableObject
     public RelayCommand BackCommand { get; }
     public RelayCommand NextCommand { get; }
     public RelayCommand StartOverCommand { get; }
-    public RelayCommand EditFilesCommand { get; }
+    public RelayCommand EditAppSettingsCommand { get; }
+    public RelayCommand EditWebConfigCommand { get; }
     public RelayCommand ExitCommand { get; }
 
     // -----------------------------------------------------------------
@@ -262,20 +264,26 @@ public sealed class MainViewModel : ObservableObject
         _templatesLoaded = true;
     }
 
-    private void EditConfigFiles()
+    private void EditAppSettings()
     {
         LoadConfigTemplates();
-
-        var window = new ConfigFilesWindow(AppSettingsContent, WebConfigContent)
+        var window = new FileEditorWindow("appsettings.json", AppSettingsContent)
         {
             Owner = Application.Current.MainWindow,
         };
-
         if (window.ShowDialog() == true)
+            AppSettingsContent = window.EditedText;
+    }
+
+    private void EditWebConfig()
+    {
+        LoadConfigTemplates();
+        var window = new FileEditorWindow("web.config", WebConfigContent)
         {
-            AppSettingsContent = window.AppSettingsText;
-            WebConfigContent = window.WebConfigText;
-        }
+            Owner = Application.Current.MainWindow,
+        };
+        if (window.ShowDialog() == true)
+            WebConfigContent = window.EditedText;
     }
 
     // -----------------------------------------------------------------
@@ -516,6 +524,7 @@ public sealed class MainViewModel : ObservableObject
         BackCommand.RaiseCanExecuteChanged();
         NextCommand.RaiseCanExecuteChanged();
         StartOverCommand.RaiseCanExecuteChanged();
-        EditFilesCommand.RaiseCanExecuteChanged();
+        EditAppSettingsCommand.RaiseCanExecuteChanged();
+        EditWebConfigCommand.RaiseCanExecuteChanged();
     }
 }
