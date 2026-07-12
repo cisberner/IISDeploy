@@ -367,6 +367,13 @@ public sealed class DeploymentService
                 }
 
                 string fileName = Path.GetFileName(relativePath);
+
+                // The deployment template only seeds a new site's appsettings.json and
+                // must never land in the deployed folder. Skip it silently - logging it
+                // would just confuse the administrator with a file they never chose to deploy.
+                if (string.Equals(fileName, AppSettingsTemplateName, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
                 if (IsProtectedFile(fileName))
                 {
                     Log($"WARNING: Skipping protected file: {relativePath}");
