@@ -25,8 +25,13 @@
     <Description>A WPF UI which publishes a zipped Publish folder on an installed IIS site.</Description>
     <Copyright>Christian Isberner</Copyright>
     <ApplicationManifest>app.manifest</ApplicationManifest>
-    <ApplicationIcon></ApplicationIcon>
+    <ApplicationIcon>Assets\app.ico</ApplicationIcon>
   </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Embed the icon as a WPF resource too, so the window can use it (Window.Icon). -->
+    <Resource Include="Assets\app.ico" />
+  </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\IISDeploy.Core\IISDeploy.Core.csproj" />
