@@ -111,6 +111,7 @@ public sealed class MainViewModel : ObservableObject
                 OnPropertyChanged(nameof(IsUpdateMode));
                 OnPropertyChanged(nameof(IsInstallMode));
                 OnPropertyChanged(nameof(NextButtonText));
+                OnPropertyChanged(nameof(ConfigFilesIncomplete));
                 RefreshCommands();
             }
         }
@@ -233,6 +234,7 @@ public sealed class MainViewModel : ObservableObject
             {
                 if (value)
                     LoadConfigTemplates();
+                OnPropertyChanged(nameof(ConfigFilesIncomplete));
                 RefreshCommands();
             }
         }
@@ -242,15 +244,35 @@ public sealed class MainViewModel : ObservableObject
     public string AppSettingsContent
     {
         get => _appSettingsContent;
-        set => SetProperty(ref _appSettingsContent, value);
+        set
+        {
+            if (SetProperty(ref _appSettingsContent, value))
+            {
+                OnPropertyChanged(nameof(ConfigFilesIncomplete));
+                RefreshCommands();
+            }
+        }
     }
 
     private string _webConfigContent = string.Empty;
     public string WebConfigContent
     {
         get => _webConfigContent;
-        set => SetProperty(ref _webConfigContent, value);
+        set
+        {
+            if (SetProperty(ref _webConfigContent, value))
+            {
+                OnPropertyChanged(nameof(ConfigFilesIncomplete));
+                RefreshCommands();
+            }
+        }
     }
+
+    // True when the user opted to add config files for a new site but at least one of
+    // the two files is still blank. Installation is blocked until both have content.
+    public bool ConfigFilesIncomplete =>
+        IsInstallMode && CreateConfigFiles
+        && (string.IsNullOrWhiteSpace(AppSettingsContent) || string.IsNullOrWhiteSpace(WebConfigContent));
 
     private void LoadConfigTemplates()
     {
@@ -346,7 +368,7 @@ public sealed class MainViewModel : ObservableObject
             WizardStep.Package => !string.IsNullOrEmpty(SelectedZipPath) && !IsBusy,
             WizardStep.Configure => Mode != null && !IsBusy
                 && ((IsUpdateMode && SelectedTarget != null)
-                    || (IsInstallMode && !string.IsNullOrWhiteSpace(NewSiteName))),
+                    || (IsInstallMode && !string.IsNullOrWhiteSpace(NewSiteName) && !ConfigFilesIncomplete)),
             _ => false,
         };
     }
