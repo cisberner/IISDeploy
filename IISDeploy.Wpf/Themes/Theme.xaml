@@ -246,22 +246,18 @@
     </Style>
 
     <!-- ============================ ComboBox ============================ -->
+    <!-- The toggle is the full-width clickable background (border + chevron only);
+         the selected item is shown by a separate ContentPresenter overlaid on top
+         in the ComboBox template, which is the reliable way to display SelectionBoxItem. -->
     <Style x:Key="ComboToggle" TargetType="ToggleButton">
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="ToggleButton">
                     <Border x:Name="bd" CornerRadius="8" Background="{StaticResource SurfaceAltBrush}"
                             BorderBrush="{StaticResource BorderBrush}" BorderThickness="1">
-                        <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="34" />
-                            </Grid.ColumnDefinitions>
-                            <ContentPresenter Grid.Column="0" Margin="12,0,0,0" VerticalAlignment="Center" />
-                            <TextBlock Grid.Column="1" Text="&#xE70D;" FontFamily="{StaticResource IconFont}"
-                                       FontSize="12" Foreground="{StaticResource TextSecondaryBrush}"
-                                       HorizontalAlignment="Center" VerticalAlignment="Center" />
-                        </Grid>
+                        <TextBlock Text="&#xE70D;" FontFamily="{StaticResource IconFont}"
+                                   FontSize="12" Foreground="{StaticResource TextSecondaryBrush}"
+                                   HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,13,0" />
                     </Border>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
@@ -306,12 +302,11 @@
                     <Grid>
                         <ToggleButton x:Name="ToggleButton" Style="{StaticResource ComboToggle}"
                                       Focusable="False" ClickMode="Press"
-                                      IsChecked="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}">
-                            <ContentPresenter x:Name="ContentSite" IsHitTestVisible="False"
-                                              Content="{TemplateBinding SelectionBoxItem}"
-                                              ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"
-                                              VerticalAlignment="Center" HorizontalAlignment="Left" />
-                        </ToggleButton>
+                                      IsChecked="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}" />
+                        <ContentPresenter x:Name="ContentSite" IsHitTestVisible="False"
+                                          Content="{TemplateBinding SelectionBoxItem}"
+                                          ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"
+                                          Margin="12,0,40,0" VerticalAlignment="Center" HorizontalAlignment="Left" />
                         <Popup x:Name="Popup" Placement="Bottom" AllowsTransparency="True"
                                IsOpen="{TemplateBinding IsDropDownOpen}" Focusable="False"
                                PopupAnimation="Slide">
