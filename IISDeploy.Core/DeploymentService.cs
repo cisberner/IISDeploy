@@ -127,15 +127,18 @@ public sealed class DeploymentService
 
         Directory.CreateDirectory(siteFolder);
 
-        // Seed appsettings.json / web.config for the new site. When the user opted in
-        // and supplied content (created from the deployment templates in the ZIP), write
-        // that; otherwise fall back to any *.sample file next to the ZIP. Both files are
-        // protected during extraction, so the extract step never overwrites them.
+        // appsettings.json is never taken from the ZIP for a new site: write it from the
+        // content the user entered, or fall back to an appsettings.json.sample next to the
+        // ZIP. It stays protected during extraction so it is never overwritten.
         string? zipDir = Path.GetDirectoryName(zipFile);
         WriteInitialConfigFile(siteFolder, "appsettings.json", appSettingsContent,
             zipDir != null ? Path.Combine(zipDir, "appsettings.json.sample") : null);
-        WriteInitialConfigFile(siteFolder, "web.config", webConfigContent,
-            zipDir != null ? Path.Combine(zipDir, "web.config.sample") : null);
+
+        // web.config: when the user configured it, write that content (and it is protected
+        // during extraction). Otherwise leave it unwritten so the default web.config from
+        // the ZIP is copied into the new site by the extract step below.
+        if (webConfigContent != null)
+            WriteInitialConfigFile(siteFolder, "web.config", webConfigContent, null);
 
         string certSubject = $"CN={siteName}.local";
 
@@ -213,8 +216,12 @@ public sealed class DeploymentService
         Log("Binding certificate to HTTPS...");
         BindCertificate(siteName, port, certThumbprint);
 
-        // Extract ZIP contents to the new site folder
-        ExtractZipToFolder(zipFile, siteFolder);
+        // Extract ZIP contents to the new site folder. appsettings.json is always
+        // protected; web.config is protected only when the user supplied it, otherwise
+        // the ZIP's default web.config is copied into the new site.
+        ExtractZipToFolder(zipFile, siteFolder,
+            protectAppSettings: true,
+            protectWebConfig: webConfigContent != null);
 
         // Leave the new site stopped so it can be configured before first start.
         Log("Done.");
@@ -317,8 +324,12 @@ public sealed class DeploymentService
             }
         }
 
-        // 5. Extract ZIP to site folder, skip protected files
-        ExtractZipToFolder(zipFile, physicalPath);
+        // 5. Extract ZIP to site folder. When updating an existing site, both
+        //    appsettings.json and web.config are protected so the site's own copies are
+        //    never overwritten.
+        ExtractZipToFolder(zipFile, physicalPath,
+            protectAppSettings: true,
+            protectWebConfig: true);
 
         Log("Deployment complete.");
 
@@ -343,7 +354,8 @@ public sealed class DeploymentService
     // Shared helpers
     // ---------------------------------------------------------------------
 
-    private void ExtractZipToFolder(string zipFile, string targetFolder)
+    private void ExtractZipToFolder(string zipFile, string targetFolder,
+        bool protectAppSettings, bool protectWebConfig)
     {
         Log("Extracting deployment files...");
         using (ZipArchive archive = ZipFile.OpenRead(zipFile))
@@ -374,7 +386,7 @@ public sealed class DeploymentService
                 if (string.Equals(fileName, AppSettingsTemplateName, StringComparison.OrdinalIgnoreCase))
                     continue;
 
-                if (IsProtectedFile(fileName))
+                if (IsProtectedDuringExtraction(fileName, protectAppSettings, protectWebConfig))
                 {
                     Log($"WARNING: Skipping protected file: {relativePath}");
                     continue;
@@ -411,11 +423,23 @@ public sealed class DeploymentService
         }
     }
 
+    // Used by the update cleanup step to decide which existing files must be kept.
     private static bool IsProtectedFile(string fileName)
     {
         var lower = fileName.ToLowerInvariant();
         return lower == "appsettings.json"
             || lower == "web.config";
+    }
+
+    // Decides whether a ZIP entry is skipped during extraction. appsettings.json and
+    // web.config are protected independently so a new site can receive the ZIP's default
+    // web.config while appsettings.json (and both, when updating) stay untouched.
+    private static bool IsProtectedDuringExtraction(string fileName, bool protectAppSettings, bool protectWebConfig)
+    {
+        var lower = fileName.ToLowerInvariant();
+        if (lower == "appsettings.json") return protectAppSettings;
+        if (lower == "web.config") return protectWebConfig;
+        return false;
     }
 
     // Binds the certificate (already in LocalMachine\My) to the site's HTTPS binding.
