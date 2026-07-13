@@ -1,5 +1,7 @@
 using System.Collections.Specialized;
+using System.ComponentModel;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Threading;
 using IISDeploy.Wpf.ViewModels;
@@ -17,6 +19,24 @@ public partial class MainWindow : Window
 
         // Keep the log view pinned to the newest line as entries stream in.
         _viewModel.LogEntries.CollectionChanged += OnLogEntriesChanged;
+
+        // PasswordBox.Password is not bindable; mirror the VM value when it is reset
+        // (e.g. Start over) so a stale password never lingers in the box.
+        _viewModel.PropertyChanged += OnViewModelPropertyChanged;
+    }
+
+    private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(MainViewModel.AppPoolPassword)
+            && AppPoolPasswordBox.Password != _viewModel.AppPoolPassword)
+        {
+            AppPoolPasswordBox.Password = _viewModel.AppPoolPassword;
+        }
+    }
+
+    private void AppPoolPasswordBox_PasswordChanged(object sender, RoutedEventArgs e)
+    {
+        _viewModel.AppPoolPassword = ((PasswordBox)sender).Password;
     }
 
     private void OnLogEntriesChanged(object? sender, NotifyCollectionChangedEventArgs e)

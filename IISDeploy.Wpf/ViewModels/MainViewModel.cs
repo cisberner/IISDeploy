@@ -29,8 +29,8 @@ public sealed class MainViewModel : ObservableObject
         BackCommand = new RelayCommand(GoBack, CanGoBack);
         NextCommand = new RelayCommand(GoNext, CanGoNext);
         StartOverCommand = new RelayCommand(StartOver, () => IsFinished);
-        EditAppSettingsCommand = new RelayCommand(EditAppSettings, () => CreateConfigFiles && HasAppSettingsTemplate);
-        EditWebConfigCommand = new RelayCommand(EditWebConfig, () => CreateConfigFiles && HasWebConfigTemplate);
+        EditAppSettingsCommand = new RelayCommand(EditAppSettings, () => ConfigureSite && HasAppSettingsTemplate);
+        EditWebConfigCommand = new RelayCommand(EditWebConfig, () => ConfigureSite && HasWebConfigTemplate);
         ExitCommand = new RelayCommand(() => Application.Current.Shutdown());
 
         // Default to the folder the tool is launched from - the same "drop the tool
@@ -111,7 +111,7 @@ public sealed class MainViewModel : ObservableObject
                 OnPropertyChanged(nameof(IsUpdateMode));
                 OnPropertyChanged(nameof(IsInstallMode));
                 OnPropertyChanged(nameof(NextButtonText));
-                OnPropertyChanged(nameof(ConfigFilesIncomplete));
+                OnPropertyChanged(nameof(ConfigurationIncomplete));
                 RefreshCommands();
             }
         }
@@ -221,9 +221,11 @@ public sealed class MainViewModel : ObservableObject
         set => SetProperty(ref _newSitePort, value);
     }
 
-    // Optional: create appsettings.json / web.config for the new site, seeded from the
-    // deployment templates in the ZIP (appsettings.deployment.json / web.deployment.config).
-    // Each file is only offered when its template is present in the selected package.
+    // Configuring a new site in-wizard: optionally seed appsettings.json / web.config from
+    // the deployment templates (appsettings.deployment.json / web.deployment.config) and set
+    // a custom application pool identity. When the site is configured here it is also started
+    // automatically after installation. The file editors are offered only when the matching
+    // template is present; the identity option is always available.
     private bool _templatesLoaded;
 
     private bool _hasAppSettingsTemplate;
@@ -236,7 +238,7 @@ public sealed class MainViewModel : ObservableObject
             {
                 OnPropertyChanged(nameof(CanConfigureFiles));
                 OnPropertyChanged(nameof(HasBothTemplates));
-                OnPropertyChanged(nameof(ConfigFilesIncomplete));
+                OnPropertyChanged(nameof(ConfigurationIncomplete));
             }
         }
     }
@@ -251,26 +253,27 @@ public sealed class MainViewModel : ObservableObject
             {
                 OnPropertyChanged(nameof(CanConfigureFiles));
                 OnPropertyChanged(nameof(HasBothTemplates));
-                OnPropertyChanged(nameof(ConfigFilesIncomplete));
+                OnPropertyChanged(nameof(ConfigurationIncomplete));
             }
         }
     }
 
-    // The configure option is offered only when the package ships at least one template.
+    // Whether the package ships config-file templates (controls the per-file edit links).
     public bool CanConfigureFiles => HasAppSettingsTemplate || HasWebConfigTemplate;
     public bool HasBothTemplates => HasAppSettingsTemplate && HasWebConfigTemplate;
 
-    private bool _createConfigFiles;
-    public bool CreateConfigFiles
+    // Master toggle: configure the new site in this wizard (and start it afterwards).
+    private bool _configureSite;
+    public bool ConfigureSite
     {
-        get => _createConfigFiles;
+        get => _configureSite;
         set
         {
-            if (SetProperty(ref _createConfigFiles, value))
+            if (SetProperty(ref _configureSite, value))
             {
                 if (value)
                     LoadConfigTemplates();
-                OnPropertyChanged(nameof(ConfigFilesIncomplete));
+                OnPropertyChanged(nameof(ConfigurationIncomplete));
                 RefreshCommands();
             }
         }
@@ -284,7 +287,7 @@ public sealed class MainViewModel : ObservableObject
         {
             if (SetProperty(ref _appSettingsContent, value))
             {
-                OnPropertyChanged(nameof(ConfigFilesIncomplete));
+                OnPropertyChanged(nameof(ConfigurationIncomplete));
                 RefreshCommands();
             }
         }
@@ -298,21 +301,58 @@ public sealed class MainViewModel : ObservableObject
         {
             if (SetProperty(ref _webConfigContent, value))
             {
-                OnPropertyChanged(nameof(ConfigFilesIncomplete));
+                OnPropertyChanged(nameof(ConfigurationIncomplete));
                 RefreshCommands();
             }
         }
     }
 
-    // True when the user opted to add config files but a file the package offers is still
-    // blank. Installation is blocked until every offered file has content.
-    public bool ConfigFilesIncomplete =>
-        IsInstallMode && CreateConfigFiles
-        && ((HasAppSettingsTemplate && string.IsNullOrWhiteSpace(AppSettingsContent))
-            || (HasWebConfigTemplate && string.IsNullOrWhiteSpace(WebConfigContent)));
+    // Custom application pool identity (IIS: App Pool > Advanced Settings > Identity).
+    private bool _useCustomIdentity;
+    public bool UseCustomIdentity
+    {
+        get => _useCustomIdentity;
+        set
+        {
+            if (SetProperty(ref _useCustomIdentity, value))
+            {
+                OnPropertyChanged(nameof(ConfigurationIncomplete));
+                RefreshCommands();
+            }
+        }
+    }
 
-    // Determines which config templates the selected package ships, which controls whether
-    // the configure option (and each per-file link) is shown.
+    private string _appPoolUserName = string.Empty;
+    public string AppPoolUserName
+    {
+        get => _appPoolUserName;
+        set
+        {
+            if (SetProperty(ref _appPoolUserName, value))
+            {
+                OnPropertyChanged(nameof(ConfigurationIncomplete));
+                RefreshCommands();
+            }
+        }
+    }
+
+    private string _appPoolPassword = string.Empty;
+    public string AppPoolPassword
+    {
+        get => _appPoolPassword;
+        set => SetProperty(ref _appPoolPassword, value);
+    }
+
+    // Blocks installation while a configured item is still incomplete: an offered config
+    // file left blank, or a custom identity with no user name.
+    public bool ConfigurationIncomplete =>
+        IsInstallMode && ConfigureSite
+        && ((HasAppSettingsTemplate && string.IsNullOrWhiteSpace(AppSettingsContent))
+            || (HasWebConfigTemplate && string.IsNullOrWhiteSpace(WebConfigContent))
+            || (UseCustomIdentity && string.IsNullOrWhiteSpace(AppPoolUserName)));
+
+    // Determines which config templates the selected package ships, controlling whether
+    // each per-file edit link is shown.
     private void ProbeConfigTemplates()
     {
         string? zip = SelectedZipPath;
@@ -321,9 +361,9 @@ public sealed class MainViewModel : ObservableObject
         HasWebConfigTemplate = !string.IsNullOrEmpty(zip)
             && DeploymentService.PublishFileExists(zip, DeploymentService.WebConfigTemplateName);
 
-        // If the new package offers nothing to configure, drop any prior opt-in.
-        if (!CanConfigureFiles)
-            CreateConfigFiles = false;
+        // Reload the seed content from the new package if the user is already configuring.
+        if (ConfigureSite)
+            LoadConfigTemplates();
     }
 
     private void LoadConfigTemplates()
@@ -422,7 +462,7 @@ public sealed class MainViewModel : ObservableObject
             WizardStep.Package => !string.IsNullOrEmpty(SelectedZipPath) && !IsBusy,
             WizardStep.Configure => Mode != null && !IsBusy
                 && ((IsUpdateMode && SelectedTarget != null)
-                    || (IsInstallMode && !string.IsNullOrWhiteSpace(NewSiteName) && !ConfigFilesIncomplete)),
+                    || (IsInstallMode && !string.IsNullOrWhiteSpace(NewSiteName) && !ConfigurationIncomplete)),
             _ => false,
         };
     }
@@ -456,9 +496,12 @@ public sealed class MainViewModel : ObservableObject
         SelectedTarget = null;
         NewSiteName = string.Empty;
         NewSitePort = "443";
-        CreateConfigFiles = false;
+        ConfigureSite = false;
         AppSettingsContent = string.Empty;
         WebConfigContent = string.Empty;
+        UseCustomIdentity = false;
+        AppPoolUserName = string.Empty;
+        AppPoolPassword = string.Empty;
         _templatesLoaded = false;
         IsFinished = false;
         HadError = false;
@@ -555,11 +598,17 @@ public sealed class MainViewModel : ObservableObject
         var newSiteName = NewSiteName;
         var port = int.TryParse(NewSitePort, out var parsedPort) ? parsedPort : 443;
 
-        // Only pass config content when installing a new site, the user opted in, and the
-        // package actually ships that template. Otherwise leave it null: appsettings.json is
+        // Only pass config content when installing a new site, the user is configuring it,
+        // and the package ships that template. Otherwise leave it null: appsettings.json is
         // then not created, and web.config falls back to the web.deployment.config default.
-        var appSettings = install && CreateConfigFiles && HasAppSettingsTemplate ? AppSettingsContent : null;
-        var webConfig = install && CreateConfigFiles && HasWebConfigTemplate ? WebConfigContent : null;
+        var configuring = install && ConfigureSite;
+        var appSettings = configuring && HasAppSettingsTemplate ? AppSettingsContent : null;
+        var webConfig = configuring && HasWebConfigTemplate ? WebConfigContent : null;
+
+        // Custom application pool identity, and whether to start the site after install.
+        var appPoolUser = configuring && UseCustomIdentity ? AppPoolUserName : null;
+        var appPoolPassword = configuring && UseCustomIdentity ? AppPoolPassword : null;
+        var startAfterInstall = configuring;
 
         var dispatcher = Application.Current.Dispatcher;
         void Log(string message) => dispatcher.Invoke(() => AppendLog(message));
@@ -571,7 +620,8 @@ public sealed class MainViewModel : ObservableObject
                 var service = new DeploymentService(Log);
 
                 if (install)
-                    service.CreateNewSite(zip, newSiteName, port, appSettings, webConfig);
+                    service.CreateNewSite(zip, newSiteName, port, appSettings, webConfig,
+                        appPoolUser, appPoolPassword, startAfterInstall);
                 else
                     service.DeployToSite(siteName!, zip);
             });
