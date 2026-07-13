@@ -138,7 +138,9 @@ public sealed class DeploymentService
     /// check prevents the site from being created.
     /// </summary>
     public bool CreateNewSite(string zipFile, string siteName, int port = 443,
-        string? appSettingsContent = null, string? webConfigContent = null)
+        string? appSettingsContent = null, string? webConfigContent = null,
+        string? appPoolUserName = null, string? appPoolPassword = null,
+        bool startAfterInstall = false)
     {
         siteName = siteName?.Trim() ?? string.Empty;
 
@@ -232,12 +234,23 @@ public sealed class DeploymentService
             var appPool = serverManager.ApplicationPools.Add(siteName);
             appPool.ManagedRuntimeVersion = "v4.0";
 
+            // Optional custom application pool identity (IIS: App Pool > Advanced
+            // Settings > Identity > Custom account).
+            if (!string.IsNullOrWhiteSpace(appPoolUserName))
+            {
+                appPool.ProcessModel.IdentityType = ProcessModelIdentityType.SpecificUser;
+                appPool.ProcessModel.UserName = appPoolUserName;
+                appPool.ProcessModel.Password = appPoolPassword ?? string.Empty;
+                Log($"Application pool identity set to '{appPoolUserName}'.");
+            }
+
             Log($"Creating new site '{siteName}'...");
             var newSite = serverManager.Sites.Add(siteName, "https", $"*:{port}:", siteFolder);
             newSite.ApplicationDefaults.ApplicationPoolName = siteName;
 
-            // Keep the new site stopped; it must be configured before its first start.
-            newSite.ServerAutoStart = false;
+            // Auto-start only when the site was configured in this tool; otherwise keep it
+            // stopped so it can be configured before its first start.
+            newSite.ServerAutoStart = startAfterInstall;
 
             serverManager.CommitChanges();
             Log($"Created new site '{siteName}' with HTTPS on port {port}.");
@@ -253,10 +266,48 @@ public sealed class DeploymentService
         // above. The *.deployment.* templates themselves are skipped silently.
         ExtractZipToFolder(zipFile, siteFolder);
 
-        // Leave the new site stopped so it can be configured before first start.
-        Log("Done.");
-        Log($"The new site '{siteName}' is installed, but needs to be configured before starting.");
+        if (startAfterInstall)
+        {
+            StartNewSite(siteName);
+            Log("Done.");
+            Log($"The new site '{siteName}' is installed and started.");
+        }
+        else
+        {
+            // Leave the new site stopped so it can be configured before first start.
+            Log("Done.");
+            Log($"The new site '{siteName}' is installed, but needs to be configured before starting.");
+        }
         return true;
+    }
+
+    private void StartNewSite(string siteName)
+    {
+        try
+        {
+            using var serverManager = new ServerManager();
+            var site = serverManager.Sites[siteName];
+            if (site == null)
+                return;
+
+            string poolName = site.Applications["/"].ApplicationPoolName;
+            var pool = serverManager.ApplicationPools[poolName];
+            if (pool != null && pool.State == ObjectState.Stopped)
+            {
+                pool.Start();
+                Log("App Pool started.");
+            }
+
+            if (site.State == ObjectState.Stopped)
+            {
+                site.Start();
+                Log("Site started.");
+            }
+        }
+        catch (Exception ex)
+        {
+            Log($"WARNING: Could not start the site automatically: {ex.Message}");
+        }
     }
 
     // ---------------------------------------------------------------------
