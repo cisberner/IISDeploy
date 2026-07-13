@@ -29,8 +29,8 @@ public sealed class MainViewModel : ObservableObject
         BackCommand = new RelayCommand(GoBack, CanGoBack);
         NextCommand = new RelayCommand(GoNext, CanGoNext);
         StartOverCommand = new RelayCommand(StartOver, () => IsFinished);
-        EditAppSettingsCommand = new RelayCommand(EditAppSettings, () => CreateConfigFiles);
-        EditWebConfigCommand = new RelayCommand(EditWebConfig, () => CreateConfigFiles);
+        EditAppSettingsCommand = new RelayCommand(EditAppSettings, () => CreateConfigFiles && HasAppSettingsTemplate);
+        EditWebConfigCommand = new RelayCommand(EditWebConfig, () => CreateConfigFiles && HasWebConfigTemplate);
         ExitCommand = new RelayCommand(() => Application.Current.Shutdown());
 
         // Default to the folder the tool is launched from - the same "drop the tool
@@ -146,6 +146,7 @@ public sealed class MainViewModel : ObservableObject
             {
                 OnPropertyChanged(nameof(SelectedZipName));
                 _templatesLoaded = false; // reload config templates from the new package
+                ProbeConfigTemplates();
                 RefreshCommands();
             }
         }
@@ -220,9 +221,44 @@ public sealed class MainViewModel : ObservableObject
         set => SetProperty(ref _newSitePort, value);
     }
 
-    // Optional: create appsettings.json + web.config for the new site, seeded from
-    // the deployment templates (appsettings.deployment.json / web.config) in the ZIP.
+    // Optional: create appsettings.json / web.config for the new site, seeded from the
+    // deployment templates in the ZIP (appsettings.deployment.json / web.deployment.config).
+    // Each file is only offered when its template is present in the selected package.
     private bool _templatesLoaded;
+
+    private bool _hasAppSettingsTemplate;
+    public bool HasAppSettingsTemplate
+    {
+        get => _hasAppSettingsTemplate;
+        private set
+        {
+            if (SetProperty(ref _hasAppSettingsTemplate, value))
+            {
+                OnPropertyChanged(nameof(CanConfigureFiles));
+                OnPropertyChanged(nameof(HasBothTemplates));
+                OnPropertyChanged(nameof(ConfigFilesIncomplete));
+            }
+        }
+    }
+
+    private bool _hasWebConfigTemplate;
+    public bool HasWebConfigTemplate
+    {
+        get => _hasWebConfigTemplate;
+        private set
+        {
+            if (SetProperty(ref _hasWebConfigTemplate, value))
+            {
+                OnPropertyChanged(nameof(CanConfigureFiles));
+                OnPropertyChanged(nameof(HasBothTemplates));
+                OnPropertyChanged(nameof(ConfigFilesIncomplete));
+            }
+        }
+    }
+
+    // The configure option is offered only when the package ships at least one template.
+    public bool CanConfigureFiles => HasAppSettingsTemplate || HasWebConfigTemplate;
+    public bool HasBothTemplates => HasAppSettingsTemplate && HasWebConfigTemplate;
 
     private bool _createConfigFiles;
     public bool CreateConfigFiles
@@ -268,21 +304,39 @@ public sealed class MainViewModel : ObservableObject
         }
     }
 
-    // True when the user opted to add config files for a new site but at least one of
-    // the two files is still blank. Installation is blocked until both have content.
+    // True when the user opted to add config files but a file the package offers is still
+    // blank. Installation is blocked until every offered file has content.
     public bool ConfigFilesIncomplete =>
         IsInstallMode && CreateConfigFiles
-        && (string.IsNullOrWhiteSpace(AppSettingsContent) || string.IsNullOrWhiteSpace(WebConfigContent));
+        && ((HasAppSettingsTemplate && string.IsNullOrWhiteSpace(AppSettingsContent))
+            || (HasWebConfigTemplate && string.IsNullOrWhiteSpace(WebConfigContent)));
+
+    // Determines which config templates the selected package ships, which controls whether
+    // the configure option (and each per-file link) is shown.
+    private void ProbeConfigTemplates()
+    {
+        string? zip = SelectedZipPath;
+        HasAppSettingsTemplate = !string.IsNullOrEmpty(zip)
+            && DeploymentService.PublishFileExists(zip, DeploymentService.AppSettingsTemplateName);
+        HasWebConfigTemplate = !string.IsNullOrEmpty(zip)
+            && DeploymentService.PublishFileExists(zip, DeploymentService.WebConfigTemplateName);
+
+        // If the new package offers nothing to configure, drop any prior opt-in.
+        if (!CanConfigureFiles)
+            CreateConfigFiles = false;
+    }
 
     private void LoadConfigTemplates()
     {
         if (_templatesLoaded || string.IsNullOrEmpty(SelectedZipPath))
             return;
 
-        AppSettingsContent = DeploymentService.ReadPublishFileText(
-            SelectedZipPath, DeploymentService.AppSettingsTemplateName) ?? string.Empty;
-        WebConfigContent = DeploymentService.ReadPublishFileText(
-            SelectedZipPath, DeploymentService.WebConfigTemplateName) ?? string.Empty;
+        AppSettingsContent = HasAppSettingsTemplate
+            ? DeploymentService.ReadPublishFileText(SelectedZipPath, DeploymentService.AppSettingsTemplateName) ?? string.Empty
+            : string.Empty;
+        WebConfigContent = HasWebConfigTemplate
+            ? DeploymentService.ReadPublishFileText(SelectedZipPath, DeploymentService.WebConfigTemplateName) ?? string.Empty
+            : string.Empty;
         _templatesLoaded = true;
     }
 
@@ -501,10 +555,11 @@ public sealed class MainViewModel : ObservableObject
         var newSiteName = NewSiteName;
         var port = int.TryParse(NewSitePort, out var parsedPort) ? parsedPort : 443;
 
-        // Only create appsettings.json / web.config when installing a new site and the
-        // user opted in; otherwise leave them null so they stay protected/untouched.
-        var appSettings = install && CreateConfigFiles ? AppSettingsContent : null;
-        var webConfig = install && CreateConfigFiles ? WebConfigContent : null;
+        // Only pass config content when installing a new site, the user opted in, and the
+        // package actually ships that template. Otherwise leave it null: appsettings.json is
+        // then not created, and web.config falls back to the web.deployment.config default.
+        var appSettings = install && CreateConfigFiles && HasAppSettingsTemplate ? AppSettingsContent : null;
+        var webConfig = install && CreateConfigFiles && HasWebConfigTemplate ? WebConfigContent : null;
 
         var dispatcher = Application.Current.Dispatcher;
         void Log(string message) => dispatcher.Invoke(() => AppendLog(message));

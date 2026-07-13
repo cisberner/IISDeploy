@@ -384,25 +384,30 @@
                                     </StackPanel>
                                 </Grid>
 
-                                <!-- Optional configuration files for the new site -->
-                                <CheckBox Margin="0,16,0,0" Style="{StaticResource ModernCheckBox}"
-                                          IsChecked="{Binding CreateConfigFiles}"
-                                          Content="Add configuration files for this site" />
-                                <StackPanel Orientation="Horizontal" Margin="30,10,0,0"
-                                            Visibility="{Binding CreateConfigFiles, Converter={StaticResource BoolToVis}}">
-                                    <Button Content="Edit appsettings.json" Style="{StaticResource LinkButton}"
-                                            Command="{Binding EditAppSettingsCommand}" />
-                                    <TextBlock Text="|" Foreground="{StaticResource BorderBrush}"
-                                               VerticalAlignment="Center" Margin="14,0,14,0" />
-                                    <Button Content="Edit web.config" Style="{StaticResource LinkButton}"
-                                            Command="{Binding EditWebConfigCommand}" />
-                                </StackPanel>
-                                <StackPanel Orientation="Horizontal" Margin="30,8,0,0"
-                                            Visibility="{Binding ConfigFilesIncomplete, Converter={StaticResource BoolToVis}}">
-                                    <TextBlock Text="&#xE7BA;" FontFamily="{StaticResource IconFont}" FontSize="13"
-                                               Foreground="{StaticResource WarningBrush}" VerticalAlignment="Center" Margin="0,0,8,0" />
-                                    <TextBlock Foreground="{StaticResource WarningBrush}" FontSize="12" VerticalAlignment="Center"
-                                               Text="Enter content for both appsettings.json and web.config to continue." />
+                                <!-- Optional configuration files - only when the package ships a template -->
+                                <StackPanel Visibility="{Binding CanConfigureFiles, Converter={StaticResource BoolToVis}}">
+                                    <CheckBox Margin="0,16,0,0" Style="{StaticResource ModernCheckBox}"
+                                              IsChecked="{Binding CreateConfigFiles}"
+                                              Content="Add configuration files for this site" />
+                                    <StackPanel Orientation="Horizontal" Margin="30,10,0,0"
+                                                Visibility="{Binding CreateConfigFiles, Converter={StaticResource BoolToVis}}">
+                                        <Button Content="Edit appsettings.json" Style="{StaticResource LinkButton}"
+                                                Command="{Binding EditAppSettingsCommand}"
+                                                Visibility="{Binding HasAppSettingsTemplate, Converter={StaticResource BoolToVis}}" />
+                                        <TextBlock Text="|" Foreground="{StaticResource BorderBrush}"
+                                                   VerticalAlignment="Center" Margin="14,0,14,0"
+                                                   Visibility="{Binding HasBothTemplates, Converter={StaticResource BoolToVis}}" />
+                                        <Button Content="Edit web.config" Style="{StaticResource LinkButton}"
+                                                Command="{Binding EditWebConfigCommand}"
+                                                Visibility="{Binding HasWebConfigTemplate, Converter={StaticResource BoolToVis}}" />
+                                    </StackPanel>
+                                    <StackPanel Orientation="Horizontal" Margin="30,8,0,0"
+                                                Visibility="{Binding ConfigFilesIncomplete, Converter={StaticResource BoolToVis}}">
+                                        <TextBlock Text="&#xE7BA;" FontFamily="{StaticResource IconFont}" FontSize="13"
+                                                   Foreground="{StaticResource WarningBrush}" VerticalAlignment="Center" Margin="0,0,8,0" />
+                                        <TextBlock Foreground="{StaticResource WarningBrush}" FontSize="12" VerticalAlignment="Center"
+                                                   Text="Enter content for the configuration file(s) to continue." />
+                                    </StackPanel>
                                 </StackPanel>
                             </StackPanel>
                         </Border>
