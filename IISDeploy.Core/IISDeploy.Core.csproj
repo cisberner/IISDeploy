@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <!-- Embed debug symbols so no separate .pdb is copied into a single-file publish. -->
+    <DebugType>embedded</DebugType>
+    <Title>IIS Deploy Core</Title>
+    <Authors>Christian Isberner</Authors>
+    <Company>Christian Isberner Software Consultant</Company>
+    <Description>Shared deployment logic used by the IIS Deploy CLI and WPF UI.</Description>
+    <Copyright>Christian Isberner</Copyright>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Web.Administration" Version="11.1.0" />
+  </ItemGroup>
+
+</Project>
