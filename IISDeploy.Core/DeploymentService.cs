@@ -150,6 +150,12 @@ public sealed class DeploymentService
             return false;
         }
 
+        if (port < 1 || port > 65535)
+        {
+            Log($"ERROR: Invalid port '{port}'. Valid range is 1-65535.");
+            return false;
+        }
+
         string baseFolder = @"C:\inetpub";
         string siteFolder = Path.Combine(baseFolder, siteName);
 
