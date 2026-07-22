@@ -245,6 +245,38 @@
         </Setter>
     </Style>
 
+    <!-- ============================ Numeric spinner (up/down RepeatButton) ============================ -->
+    <!-- Compact chevron button overlaid on the right edge of a ModernTextBox to nudge a
+         numeric value; RepeatButton keeps firing while held for quick adjustment. -->
+    <Style x:Key="SpinnerRepeatButton" TargetType="RepeatButton">
+        <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}" />
+        <Setter Property="FontFamily" Value="{StaticResource IconFont}" />
+        <Setter Property="FontSize" Value="8" />
+        <Setter Property="Width" Value="24" />
+        <Setter Property="Height" Value="15" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="Focusable" Value="False" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="RepeatButton">
+                    <Border x:Name="bd" CornerRadius="4" Background="{StaticResource SurfaceHoverBrush}">
+                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="bd" Property="Background" Value="{StaticResource AccentBrush}" />
+                            <Setter Property="Foreground" Value="White" />
+                        </Trigger>
+                        <Trigger Property="IsPressed" Value="True">
+                            <Setter TargetName="bd" Property="Background" Value="{StaticResource AccentBrush}" />
+                            <Setter Property="Foreground" Value="White" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
     <!-- ============================ PasswordBox ============================ -->
     <Style x:Key="ModernPasswordBox" TargetType="PasswordBox">
         <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />

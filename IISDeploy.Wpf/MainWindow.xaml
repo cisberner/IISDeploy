@@ -379,8 +379,19 @@
                                     </StackPanel>
                                     <StackPanel Grid.Column="1">
                                         <TextBlock Text="PORT" Style="{StaticResource LabelText}" />
-                                        <TextBox Style="{StaticResource ModernTextBox}"
-                                                 Text="{Binding NewSitePort, UpdateSourceTrigger=PropertyChanged}" />
+                                        <!-- Numeric spinner: styled text box with up/down chevrons overlaid on the right. -->
+                                        <Grid>
+                                            <TextBox Style="{StaticResource ModernTextBox}" Padding="12,0,34,0"
+                                                     PreviewTextInput="PortBox_PreviewTextInput"
+                                                     DataObject.Pasting="PortBox_Pasting"
+                                                     Text="{Binding NewSitePort, UpdateSourceTrigger=PropertyChanged}" />
+                                            <StackPanel HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,6,0">
+                                                <RepeatButton Style="{StaticResource SpinnerRepeatButton}" Content="&#xE70E;"
+                                                              Command="{Binding PortUpCommand}" ToolTip="Increase port" />
+                                                <RepeatButton Style="{StaticResource SpinnerRepeatButton}" Content="&#xE70D;"
+                                                              Margin="0,2,0,0" Command="{Binding PortDownCommand}" ToolTip="Decrease port" />
+                                            </StackPanel>
+                                        </Grid>
                                     </StackPanel>
                                 </Grid>
 
@@ -410,6 +421,7 @@
                                         <!-- Application pool identity -->
                                         <CheckBox Margin="0,14,0,0" Style="{StaticResource ModernCheckBox}"
                                                   IsChecked="{Binding UseCustomIdentity}"
+                                                  Checked="UseCustomIdentity_Checked"
                                                   Content="Run the application pool under a specific account" />
                                         <Grid Margin="30,10,0,0"
                                               Visibility="{Binding UseCustomIdentity, Converter={StaticResource BoolToVis}}">
@@ -419,7 +431,7 @@
                                             </Grid.ColumnDefinitions>
                                             <StackPanel Grid.Column="0" Margin="0,0,8,0">
                                                 <TextBlock Text="USER NAME" Style="{StaticResource LabelText}" />
-                                                <TextBox Style="{StaticResource ModernTextBox}"
+                                                <TextBox x:Name="AppPoolUserNameBox" Style="{StaticResource ModernTextBox}"
                                                          Text="{Binding AppPoolUserName, UpdateSourceTrigger=PropertyChanged}" />
                                             </StackPanel>
                                             <StackPanel Grid.Column="1" Margin="8,0,0,0">
@@ -537,6 +549,15 @@
                         <!-- Deploy + finished: Start over / Close -->
                         <StackPanel Orientation="Horizontal"
                                     Visibility="{Binding IsFinished, Converter={StaticResource BoolToVis}}">
+                            <Button Style="{StaticResource SecondaryButton}" Margin="0,0,10,0"
+                                    Command="{Binding OpenWebsiteCommand}"
+                                    Visibility="{Binding CanOpenWebsite, Converter={StaticResource BoolToVis}}">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="&#xE774;" FontFamily="{StaticResource IconFont}" FontSize="13"
+                                               VerticalAlignment="Center" Margin="0,0,8,0" />
+                                    <TextBlock Text="Open website" VerticalAlignment="Center" />
+                                </StackPanel>
+                            </Button>
                             <Button Content="Start over" Style="{StaticResource SecondaryButton}" Margin="0,0,10,0"
                                     Command="{Binding StartOverCommand}" />
                             <Button Content="Close" Style="{StaticResource PrimaryButton}" MinWidth="110"

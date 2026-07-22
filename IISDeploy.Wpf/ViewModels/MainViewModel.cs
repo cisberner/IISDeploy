@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Diagnostics;
 using System.IO;
 using System.Windows;
 using IISDeploy.Core;
@@ -29,6 +30,9 @@ public sealed class MainViewModel : ObservableObject
         BackCommand = new RelayCommand(GoBack, CanGoBack);
         NextCommand = new RelayCommand(GoNext, CanGoNext);
         StartOverCommand = new RelayCommand(StartOver, () => IsFinished);
+        OpenWebsiteCommand = new RelayCommand(OpenWebsite, () => CanOpenWebsite);
+        PortUpCommand = new RelayCommand(() => StepPort(+1));
+        PortDownCommand = new RelayCommand(() => StepPort(-1));
         EditAppSettingsCommand = new RelayCommand(EditAppSettings, () => ConfigureSite && HasAppSettingsTemplate);
         EditWebConfigCommand = new RelayCommand(EditWebConfig, () => ConfigureSite && HasWebConfigTemplate);
         ExitCommand = new RelayCommand(() => Application.Current.Shutdown());
@@ -45,6 +49,9 @@ public sealed class MainViewModel : ObservableObject
     public RelayCommand BackCommand { get; }
     public RelayCommand NextCommand { get; }
     public RelayCommand StartOverCommand { get; }
+    public RelayCommand OpenWebsiteCommand { get; }
+    public RelayCommand PortUpCommand { get; }
+    public RelayCommand PortDownCommand { get; }
     public RelayCommand EditAppSettingsCommand { get; }
     public RelayCommand EditWebConfigCommand { get; }
     public RelayCommand ExitCommand { get; }
@@ -219,6 +226,14 @@ public sealed class MainViewModel : ObservableObject
     {
         get => _newSitePort;
         set => SetProperty(ref _newSitePort, value);
+    }
+
+    // Nudges the port up or down (spinner buttons), keeping it within the valid 1-65535
+    // range. A non-numeric value falls back to the default HTTPS port.
+    private void StepPort(int delta)
+    {
+        int value = int.TryParse(NewSitePort, out var parsed) ? parsed : 443;
+        NewSitePort = Math.Clamp(value + delta, 1, 65535).ToString();
     }
 
     // Configuring a new site in-wizard: optionally seed appsettings.json / web.config from
@@ -428,6 +443,7 @@ public sealed class MainViewModel : ObservableObject
             {
                 OnPropertyChanged(nameof(HeaderTitle));
                 OnPropertyChanged(nameof(HeaderSubtitle));
+                OnPropertyChanged(nameof(CanOpenWebsite));
                 RefreshCommands();
             }
         }
@@ -440,7 +456,10 @@ public sealed class MainViewModel : ObservableObject
         private set
         {
             if (SetProperty(ref _hadError, value))
+            {
                 OnPropertyChanged(nameof(ResultSummary));
+                OnPropertyChanged(nameof(CanOpenWebsite));
+            }
         }
     }
 
@@ -449,6 +468,15 @@ public sealed class MainViewModel : ObservableObject
         : HadError
             ? "Completed with errors - review the log above."
             : "Everything completed successfully.";
+
+    // The URL to open in a browser once the operation finishes. Set when the deployment
+    // starts: the existing site's own binding for an update, or the new site's binding for
+    // an install - but only when the new site was configured (and therefore started), since
+    // an unconfigured new site is left stopped and would not open.
+    private string? _browseUrl;
+
+    // Shows/enables the "Open website" button on the finished page.
+    public bool CanOpenWebsite => IsFinished && !HadError && !string.IsNullOrEmpty(_browseUrl);
 
     // -----------------------------------------------------------------
     // Command implementations
@@ -503,10 +531,28 @@ public sealed class MainViewModel : ObservableObject
         AppPoolUserName = string.Empty;
         AppPoolPassword = string.Empty;
         _templatesLoaded = false;
+        _browseUrl = null;
         IsFinished = false;
         HadError = false;
         CurrentStep = WizardStep.Package;
         RefreshZipFiles();
+    }
+
+    // Opens the deployed site in the default browser. Uses the shell so the user's default
+    // browser handles the https URL (and any self-signed-certificate prompt).
+    private void OpenWebsite()
+    {
+        if (string.IsNullOrEmpty(_browseUrl))
+            return;
+
+        try
+        {
+            Process.Start(new ProcessStartInfo(_browseUrl) { UseShellExecute = true });
+        }
+        catch (Exception ex)
+        {
+            AppendLog($"WARNING: Could not open the browser: {ex.Message}");
+        }
     }
 
     private void BrowseForFolder()
@@ -610,6 +656,13 @@ public sealed class MainViewModel : ObservableObject
         var appPoolPassword = configuring && UseCustomIdentity ? AppPoolPassword : null;
         var startAfterInstall = configuring;
 
+        // URL the "Open website" button will use. For an update it is the existing site's
+        // binding; for an install it is the new https site - but only when it was configured
+        // (and therefore started), since an unconfigured new site is left stopped.
+        _browseUrl = install
+            ? (startAfterInstall ? DeploymentService.BuildBrowseUrl("https", null, port) : null)
+            : SelectedTarget?.Site.Url;
+
         var dispatcher = Application.Current.Dispatcher;
         void Log(string message) => dispatcher.Invoke(() => AppendLog(message));
 
@@ -651,6 +704,7 @@ public sealed class MainViewModel : ObservableObject
         BackCommand.RaiseCanExecuteChanged();
         NextCommand.RaiseCanExecuteChanged();
         StartOverCommand.RaiseCanExecuteChanged();
+        OpenWebsiteCommand.RaiseCanExecuteChanged();
         EditAppSettingsCommand.RaiseCanExecuteChanged();
         EditWebConfigCommand.RaiseCanExecuteChanged();
     }

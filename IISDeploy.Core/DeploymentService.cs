@@ -93,6 +93,20 @@ public sealed class DeploymentService
     }
 
     /// <summary>
+    /// Builds a browseable URL from a binding's protocol, host header and port. An empty
+    /// host header (the "*" catch-all IIS uses) is replaced with "localhost" so the URL
+    /// actually resolves, and the default port for the scheme is omitted.
+    /// </summary>
+    public static string BuildBrowseUrl(string protocol, string? host, int port)
+    {
+        string h = string.IsNullOrWhiteSpace(host) || host == "*" ? "localhost" : host;
+        bool defaultPort = (protocol == "http" && port == 80) || (protocol == "https" && port == 443);
+        return defaultPort || port <= 0
+            ? $"{protocol}://{h}/"
+            : $"{protocol}://{h}:{port}/";
+    }
+
+    /// <summary>
     /// Enumerates the installed IIS sites.
     /// </summary>
     public IReadOnlyList<SiteInfo> GetSites()
@@ -104,6 +118,7 @@ public sealed class DeploymentService
         {
             string? physicalPath = null;
             string? state = null;
+            string? url = null;
 
             try
             {
@@ -117,11 +132,24 @@ public sealed class DeploymentService
             }
             catch { /* state can throw when the app pool is misconfigured */ }
 
+            try
+            {
+                // Prefer an https binding, then http; ignore net.tcp and friends.
+                var binding = site.Bindings
+                    .Where(b => b.Protocol == "https" || b.Protocol == "http")
+                    .OrderByDescending(b => b.Protocol == "https")
+                    .FirstOrDefault();
+                if (binding != null)
+                    url = BuildBrowseUrl(binding.Protocol, binding.Host, binding.EndPoint?.Port ?? 0);
+            }
+            catch { /* malformed bindings - just leave the URL unset */ }
+
             result.Add(new SiteInfo
             {
                 Name = site.Name,
                 PhysicalPath = physicalPath,
                 State = state,
+                Url = url,
             });
         }
 

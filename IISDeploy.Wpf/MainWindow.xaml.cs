@@ -56,6 +56,36 @@ public partial class MainWindow : Window
         }), DispatcherPriority.Input);
     }
 
+    private void UseCustomIdentity_Checked(object sender, RoutedEventArgs e)
+    {
+        // Move focus to the user-name box when the custom-account option is enabled.
+        // Deferred to Input priority so the field is laid out and visible first.
+        Dispatcher.BeginInvoke(new Action(() =>
+        {
+            AppPoolUserNameBox.Focus();
+            Keyboard.Focus(AppPoolUserNameBox);
+        }), DispatcherPriority.Input);
+    }
+
+    // Keep the port box numeric: block any typed character that is not a digit...
+    private void PortBox_PreviewTextInput(object sender, TextCompositionEventArgs e)
+    {
+        e.Handled = !e.Text.All(char.IsDigit);
+    }
+
+    // ...and reject a paste unless it is entirely digits.
+    private void PortBox_Pasting(object sender, DataObjectPastingEventArgs e)
+    {
+        if (e.DataObject.GetDataPresent(DataFormats.UnicodeText)
+            && e.DataObject.GetData(DataFormats.UnicodeText) is string text
+            && text.Length > 0 && text.All(char.IsDigit))
+        {
+            return;
+        }
+
+        e.CancelCommand();
+    }
+
     private void MinimizeButton_Click(object sender, RoutedEventArgs e)
         => WindowState = WindowState.Minimized;
 
