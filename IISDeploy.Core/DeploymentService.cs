@@ -378,7 +378,7 @@ public sealed class DeploymentService
         string backupZip = Path.Combine(backupFolder, $"{selectedSite.Name}_backup_{DateTime.Now:yyyyMMdd_HHmmss}.zip");
 
         Log("Creating backup...");
-        ZipFile.CreateFromDirectory(physicalPath, backupZip, CompressionLevel.Optimal, includeBaseDirectory: false);
+        CreateBackupZip(physicalPath, backupZip);
         Log($"Backup created: {backupZip}");
 
         // 4. Delete old files/folders except protected ones
@@ -437,6 +437,27 @@ public sealed class DeploymentService
     // ---------------------------------------------------------------------
     // Shared helpers
     // ---------------------------------------------------------------------
+
+    /// <summary>
+    /// Creates a backup ZIP of the site's current content, nesting every file under a
+    /// top-level "Publish/" folder. This mirrors the layout of a deployment package so the
+    /// backup can be fed straight back into <see cref="DeployToSite"/> or
+    /// <see cref="CreateNewSite"/> to restore a previous version - the extraction step only
+    /// ever copies entries found under "Publish/".
+    /// </summary>
+    private static void CreateBackupZip(string sourceFolder, string backupZip)
+    {
+        const string prefix = "Publish/";
+
+        using var archive = ZipFile.Open(backupZip, ZipArchiveMode.Create);
+
+        foreach (var file in Directory.EnumerateFiles(sourceFolder, "*", SearchOption.AllDirectories))
+        {
+            // Preserve the folder structure below the site root, rooted under "Publish/".
+            string relativePath = Path.GetRelativePath(sourceFolder, file).Replace('\\', '/');
+            archive.CreateEntryFromFile(file, prefix + relativePath, CompressionLevel.Optimal);
+        }
+    }
 
     private void ExtractZipToFolder(string zipFile, string targetFolder)
     {
