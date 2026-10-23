@@ -163,14 +163,16 @@ public sealed class DeploymentService
     /// <summary>
     /// Creates a new IIS site (app pool, HTTPS binding, self-signed certificate)
     /// and extracts the deployment ZIP into it. Returns false when a validation
-    /// check prevents the site from being created.
+    /// check prevents the site from being created. <paramref name="hostingSettings"/>
+    /// defaults to <see cref="HostingSettings"/>' own defaults.
     /// </summary>
     public bool CreateNewSite(string zipFile, string siteName, int port = 443,
         string? appSettingsContent = null, string? webConfigContent = null,
         string? appPoolUserName = null, string? appPoolPassword = null,
-        bool startAfterInstall = false)
+        bool startAfterInstall = false, HostingSettings? hostingSettings = null)
     {
         siteName = siteName?.Trim() ?? string.Empty;
+        hostingSettings ??= new HostingSettings();
 
         if (string.IsNullOrWhiteSpace(siteName))
         {
@@ -181,6 +183,12 @@ public sealed class DeploymentService
         if (port < 1 || port > 65535)
         {
             Log($"ERROR: Invalid port '{port}'. Valid range is 1-65535.");
+            return false;
+        }
+
+        if (hostingSettings.Validate() is string invalidSettings)
+        {
+            Log($"ERROR: {invalidSettings}");
             return false;
         }
 
@@ -300,6 +308,15 @@ public sealed class DeploymentService
         // above. The *.deployment.* templates themselves are skipped silently.
         ExtractZipToFolder(zipFile, siteFolder);
 
+        // Only now that the files are in place: with AlwaysRunning and Preload Enabled IIS
+        // starts the application as soon as the change is committed.
+        using (var serverManager = new ServerManager())
+        {
+            var site = serverManager.Sites[siteName];
+            if (site != null)
+                ApplyHostingSettings(serverManager, site, hostingSettings);
+        }
+
         if (startAfterInstall)
         {
             StartNewSite(siteName);
@@ -350,10 +367,18 @@ public sealed class DeploymentService
 
     /// <summary>
     /// Stops the target site, backs up its current content, cleans the folder and
-    /// extracts the deployment ZIP, then restarts the site and app pool.
+    /// extracts the deployment ZIP, applies <paramref name="hostingSettings"/> (defaulting
+    /// to <see cref="HostingSettings"/>' own defaults), then restarts the site and app pool.
     /// </summary>
-    public void DeployToSite(string siteName, string zipFile)
+    public void DeployToSite(string siteName, string zipFile, HostingSettings? hostingSettings = null)
     {
+        hostingSettings ??= new HostingSettings();
+        if (hostingSettings.Validate() is string invalidSettings)
+        {
+            Log($"ERROR: {invalidSettings}");
+            return;
+        }
+
         using var serverManager = new ServerManager();
 
         var selectedSite = serverManager.Sites[siteName];
@@ -445,14 +470,18 @@ public sealed class DeploymentService
 
         Log("Deployment complete.");
 
-        // 6. Start App Pool
+        // 6. Apply the hosting settings while the site is stopped, so the app pool starts
+        //    with them.
+        ApplyHostingSettings(serverManager, selectedSite, hostingSettings);
+
+        // 7. Start App Pool
         if (appPool != null && appPool.State == ObjectState.Stopped)
         {
             appPool.Start();
             Log("App Pool started.");
         }
 
-        // 7. Start site
+        // 8. Start site
         if (selectedSite.State == ObjectState.Stopped)
         {
             selectedSite.Start();
@@ -553,6 +582,74 @@ public sealed class DeploymentService
         else if (samplePath != null && File.Exists(samplePath))
         {
             File.Copy(samplePath, target, overwrite: false);
+        }
+    }
+
+    // Sets the application pool's Start Mode and Idle Time-out and the site's Preload Enabled
+    // (an attribute of the site's root application, where IIS Manager shows it as a site
+    // setting), then logs each value with the one it replaced. A failure is only a warning:
+    // the files are deployed either way, and the values can still be set in IIS Manager.
+    private void ApplyHostingSettings(ServerManager serverManager, Site site, HostingSettings settings)
+    {
+        Log("Applying application pool and site settings...");
+        var changes = new List<string>();
+
+        try
+        {
+            var rootApp = site.Applications["/"];
+            string poolName = rootApp.ApplicationPoolName;
+            var appPool = serverManager.ApplicationPools[poolName];
+
+            if (appPool == null)
+            {
+                Log($"WARNING: Application pool '{poolName}' not found; Start Mode and Idle Time-out were not set.");
+            }
+            else
+            {
+                changes.Add($"Start Mode: {DescribeChange(appPool.StartMode, settings.StartMode)}");
+                changes.Add("Idle Time-out (minutes): "
+                    + DescribeChange((int)appPool.ProcessModel.IdleTimeout.TotalMinutes, settings.IdleTimeoutMinutes));
+                appPool.StartMode = settings.StartMode;
+                appPool.ProcessModel.IdleTimeout = TimeSpan.FromMinutes(settings.IdleTimeoutMinutes);
+            }
+
+            changes.Add($"Preload Enabled: {DescribeChange((bool)rootApp["preloadEnabled"], settings.PreloadEnabled)}");
+            rootApp["preloadEnabled"] = settings.PreloadEnabled;
+
+            serverManager.CommitChanges();
+        }
+        catch (Exception ex)
+        {
+            Log($"WARNING: Could not apply the application pool and site settings: {ex.Message}");
+            return;
+        }
+
+        foreach (var change in changes)
+            Log(change);
+
+        if (settings.PreloadEnabled && !IsApplicationInitializationInstalled(serverManager))
+            Log("WARNING: Preload Enabled has no effect until the IIS feature 'Application Initialization' "
+                + "is installed (Web Server > Application Development).");
+    }
+
+    private static string DescribeChange<T>(T current, T wanted) =>
+        EqualityComparer<T>.Default.Equals(current, wanted) ? $"{wanted}" : $"{wanted} (was {current})";
+
+    // Whether IIS has the Application Initialization module, which Preload Enabled relies on.
+    // When the module list cannot be read the answer is yes, so no false warning is logged.
+    private static bool IsApplicationInitializationInstalled(ServerManager serverManager)
+    {
+        try
+        {
+            var modules = serverManager.GetApplicationHostConfiguration()
+                .GetSection("system.webServer/globalModules")
+                .GetCollection();
+            return modules.Any(m => string.Equals(m["name"] as string, "ApplicationInitializationModule",
+                StringComparison.OrdinalIgnoreCase));
+        }
+        catch
+        {
+            return true;
         }
     }
 

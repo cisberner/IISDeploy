@@ -6,6 +6,7 @@ using IISDeploy.Core;
 using IISDeploy.Wpf.Models;
 using IISDeploy.Wpf.Mvvm;
 using IISDeploy.Wpf.Views;
+using StartMode = Microsoft.Web.Administration.StartMode;
 
 namespace IISDeploy.Wpf.ViewModels;
 
@@ -33,6 +34,8 @@ public sealed class MainViewModel : ObservableObject
         OpenWebsiteCommand = new RelayCommand(OpenWebsite, () => CanOpenWebsite);
         PortUpCommand = new RelayCommand(() => StepPort(+1));
         PortDownCommand = new RelayCommand(() => StepPort(-1));
+        IdleTimeoutUpCommand = new RelayCommand(() => StepIdleTimeout(+1));
+        IdleTimeoutDownCommand = new RelayCommand(() => StepIdleTimeout(-1));
         EditAppSettingsCommand = new RelayCommand(EditAppSettings, () => ConfigureSite && HasAppSettingsTemplate);
         EditWebConfigCommand = new RelayCommand(EditWebConfig, () => ConfigureSite && HasWebConfigTemplate);
         ExitCommand = new RelayCommand(() => Application.Current.Shutdown());
@@ -52,6 +55,8 @@ public sealed class MainViewModel : ObservableObject
     public RelayCommand OpenWebsiteCommand { get; }
     public RelayCommand PortUpCommand { get; }
     public RelayCommand PortDownCommand { get; }
+    public RelayCommand IdleTimeoutUpCommand { get; }
+    public RelayCommand IdleTimeoutDownCommand { get; }
     public RelayCommand EditAppSettingsCommand { get; }
     public RelayCommand EditWebConfigCommand { get; }
     public RelayCommand ExitCommand { get; }
@@ -234,6 +239,51 @@ public sealed class MainViewModel : ObservableObject
     {
         int value = int.TryParse(NewSitePort, out var parsed) ? parsed : 443;
         NewSitePort = Math.Clamp(value + delta, 1, 65535).ToString();
+    }
+
+    // Application pool and site settings (IIS: App Pool > Start Mode / Idle Time-out, Site >
+    // Preload Enabled), applied to a new site and on an update of an existing one. Preset to
+    // the values that keep the application warm; the user can change them for each deploy.
+    public IReadOnlyList<StartMode> StartModes { get; } = [StartMode.AlwaysRunning, StartMode.OnDemand];
+
+    private StartMode _appPoolStartMode = StartMode.AlwaysRunning;
+    public StartMode AppPoolStartMode
+    {
+        get => _appPoolStartMode;
+        set => SetProperty(ref _appPoolStartMode, value);
+    }
+
+    private string _idleTimeout = "0";
+    public string IdleTimeout
+    {
+        get => _idleTimeout;
+        set
+        {
+            if (SetProperty(ref _idleTimeout, value))
+            {
+                OnPropertyChanged(nameof(IdleTimeoutInvalid));
+                RefreshCommands();
+            }
+        }
+    }
+
+    // Blocks the deploy while the idle time-out is empty or outside what IIS accepts.
+    public bool IdleTimeoutInvalid =>
+        !int.TryParse(IdleTimeout, out var minutes) || minutes < 0 || minutes > HostingSettings.MaxIdleTimeoutMinutes;
+
+    private bool _preloadEnabled = true;
+    public bool PreloadEnabled
+    {
+        get => _preloadEnabled;
+        set => SetProperty(ref _preloadEnabled, value);
+    }
+
+    // Nudges the idle time-out up or down (spinner buttons), keeping it within 0 and the
+    // IIS maximum. A non-numeric value falls back to the default of 0.
+    private void StepIdleTimeout(int delta)
+    {
+        int value = int.TryParse(IdleTimeout, out var parsed) ? parsed : 0;
+        IdleTimeout = Math.Clamp(value + delta, 0, HostingSettings.MaxIdleTimeoutMinutes).ToString();
     }
 
     // Configuring a new site in-wizard: optionally seed appsettings.json / web.config from
@@ -488,7 +538,7 @@ public sealed class MainViewModel : ObservableObject
         return CurrentStep switch
         {
             WizardStep.Package => !string.IsNullOrEmpty(SelectedZipPath) && !IsBusy,
-            WizardStep.Configure => Mode != null && !IsBusy
+            WizardStep.Configure => Mode != null && !IsBusy && !IdleTimeoutInvalid
                 && ((IsUpdateMode && SelectedTarget != null)
                     || (IsInstallMode && !string.IsNullOrWhiteSpace(NewSiteName) && !ConfigurationIncomplete)),
             _ => false,
@@ -530,6 +580,9 @@ public sealed class MainViewModel : ObservableObject
         UseCustomIdentity = false;
         AppPoolUserName = string.Empty;
         AppPoolPassword = string.Empty;
+        AppPoolStartMode = StartMode.AlwaysRunning;
+        IdleTimeout = "0";
+        PreloadEnabled = true;
         _templatesLoaded = false;
         _browseUrl = null;
         IsFinished = false;
@@ -656,6 +709,14 @@ public sealed class MainViewModel : ObservableObject
         var appPoolPassword = configuring && UseCustomIdentity ? AppPoolPassword : null;
         var startAfterInstall = configuring;
 
+        // Applied to the new site, or to the existing site on an update.
+        var hostingSettings = new HostingSettings
+        {
+            StartMode = AppPoolStartMode,
+            IdleTimeoutMinutes = int.TryParse(IdleTimeout, out var idleMinutes) ? idleMinutes : 0,
+            PreloadEnabled = PreloadEnabled,
+        };
+
         // URL the "Open website" button will use. For an update it is the existing site's
         // binding; for an install it is the new https site - but only when it was configured
         // (and therefore started), since an unconfigured new site is left stopped.
@@ -674,9 +735,9 @@ public sealed class MainViewModel : ObservableObject
 
                 if (install)
                     service.CreateNewSite(zip, newSiteName, port, appSettings, webConfig,
-                        appPoolUser, appPoolPassword, startAfterInstall);
+                        appPoolUser, appPoolPassword, startAfterInstall, hostingSettings);
                 else
-                    service.DeployToSite(siteName!, zip);
+                    service.DeployToSite(siteName!, zip, hostingSettings);
             });
         }
         catch (Exception ex)

@@ -1,4 +1,5 @@
 using IISDeploy.Core;
+using Microsoft.Web.Administration;
 
 namespace IISDeploymentHelper;
 
@@ -62,7 +63,7 @@ class Program
         }
 
         var selectedSite = sites[selectedIndex - 1];
-        service.DeployToSite(selectedSite.Name, zipFile);
+        service.DeployToSite(selectedSite.Name, zipFile, ReadHostingSettings());
     }
 
     static void CreateNewSite(DeploymentService service, string zipFile)
@@ -80,6 +81,32 @@ class Program
         var portInput = Console.ReadLine();
         int port = int.TryParse(portInput, out int parsedPort) ? parsedPort : 443;
 
-        service.CreateNewSite(zipFile, siteName, port);
+        service.CreateNewSite(zipFile, siteName, port, hostingSettings: ReadHostingSettings());
+    }
+
+    // Asks for the application pool's Start Mode and Idle Time-out and the site's Preload
+    // Enabled; Enter keeps the default shown, which keeps the application warm.
+    static HostingSettings ReadHostingSettings()
+    {
+        Console.Write("Application pool start mode - AlwaysRunning or OnDemand (default AlwaysRunning): ");
+        var startModeInput = Console.ReadLine()?.Trim();
+        var startMode = string.Equals(startModeInput, nameof(StartMode.OnDemand), StringComparison.OrdinalIgnoreCase)
+            ? StartMode.OnDemand
+            : StartMode.AlwaysRunning;
+
+        Console.Write("Application pool idle time-out in minutes, 0 = never (default 0): ");
+        var idleInput = Console.ReadLine();
+        int idleTimeout = int.TryParse(idleInput, out int parsedIdle) ? parsedIdle : 0;
+
+        Console.Write("Site preload enabled - Y or N (default Y): ");
+        var preloadInput = Console.ReadLine()?.Trim();
+        bool preload = !string.Equals(preloadInput, "N", StringComparison.OrdinalIgnoreCase);
+
+        return new HostingSettings
+        {
+            StartMode = startMode,
+            IdleTimeoutMinutes = idleTimeout,
+            PreloadEnabled = preload,
+        };
     }
 }
